@@ -37,8 +37,9 @@ type itemsResponse struct {
 	Items []embyItem `json:"Items"`
 }
 
+// ticksToDuration converts Emby/Jellyfin 100-nanosecond ticks to a Duration.
 func ticksToDuration(t int64) time.Duration {
-	return time.Duration(t) * 100 // 100ns per tick
+	return time.Duration(t) * (time.Second / ticksPerSecond)
 }
 
 func (e embyItem) toCore(userID string) core.MediaItem {
