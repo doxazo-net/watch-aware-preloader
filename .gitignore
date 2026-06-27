@@ -4,6 +4,12 @@
 *.exe
 *.test
 *.out
+coverage.out
+coverage.html
+
+# PHP tooling
+/vendor/
+.php-cs-fixer.cache
 
 # Local config / secrets (API keys live here)
 *.local.toml

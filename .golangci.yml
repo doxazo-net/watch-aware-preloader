@@ -1,0 +1,85 @@
+# Adapted from the stillwater project's golangci-lint v2 config, trimmed to the
+# linters relevant to this repo. Rationale comments are kept brief; see
+# stillwater for the full history behind each choice.
+version: "2"
+
+run:
+  timeout: 5m
+  allow-parallel-runners: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - contextcheck
+    - errcheck
+    - errorlint
+    - exhaustive
+    - gocognit
+    - gocritic
+    - gosec
+    - govet
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+  settings:
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocognit:
+      # 30 is the gocognit default. Functions over it are triaged individually
+      # with a //nolint:gocognit carrying a reason (enforced by nolintlint).
+      min-complexity: 30
+    gocritic:
+      enabled-tags:
+        - style
+        - performance
+      disabled-checks:
+        - unnamedResult    # unnamed (T, error) returns are idiomatic here
+        - hugeParam        # value-vs-pointer is a deliberate API choice
+        - paramTypeCombine # stylistic; readability sometimes wants expanded form
+        - ifElseChain      # switch-vs-if is a per-site readability call
+        - octalLiteral     # we use 0o-prefixed file modes
+        - commentedOutCode # false-positives on `// Deprecated:` markers
+    gosec:
+      excludes:
+        - G104 # unhandled errors (too noisy; errcheck covers what matters)
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+          arguments:
+            - disableStutteringCheck
+        - name: unexported-return
+          severity: warning
+    misspell:
+      locale: US
+    nolintlint:
+      # Every //nolint:foo must carry a // reason comment.
+      require-explanation: true
+    usestdlibvars:
+      http-method: true
+      http-status-code: true
+      time-weekday: true
+      time-month: true
+      time-layout: true
+      crypto-hash: true
+      constant-kind: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck

@@ -1,0 +1,7 @@
+# Phase 2: the Unraid plugin tree lives here, e.g.
+#   plugin/usr/local/emhttp/plugins/watch-aware-preloader/
+#       WatchAwarePreloader.page   (Settings page, PHP)
+#       include/*.php              (helpers)
+#       event/{started,stopping_svcs}
+#       rc.d/rc.preloadd
+# PHPStan + PHP-CS-Fixer are already configured to lint *.php and *.page here.

@@ -1,0 +1,33 @@
+# Default: auto-detect text, normalize to LF in the repo
+* text=auto eol=lf
+
+# Go
+*.go  text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+
+# PHP (Unraid plugin pages)
+*.php  text eol=lf
+*.page text eol=lf
+
+# Config / CI
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+*.neon  text eol=lf
+*.json  text eol=lf
+*.plg   text eol=lf
+Makefile text eol=lf
+
+# Shell / docs
+*.sh  text eol=lf
+*.md  text eol=lf
+*.txt text eol=lf
+LICENSE text eol=lf
+
+# Binary (no conversion)
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary

@@ -1,0 +1,88 @@
+# watch-aware-preloader - Claude Code Project Instructions
+
+## Project Overview
+
+An Unraid plugin that warms the Linux page cache with the media each household
+user is most likely to play next, so playback starts instantly instead of waiting
+8-10 seconds for an array disk to spin up. Unlike the popular "Video Preloader"
+script (which guesses from filesystem mtime), this derives intent from the media
+server's own watch state (Emby/Jellyfin): resume points, next-up episodes,
+recently-added, and what each user has been watching.
+
+The approved design is in [`docs/specs/2026-06-26-watch-aware-preloader-design.md`](docs/specs/2026-06-26-watch-aware-preloader-design.md).
+Read it before implementing. Phase 1 (Go engine MVP, Emby, file config) is the
+first deliverable.
+
+## Style and Conventions
+
+- **Go 1.26+**, `net/http` stdlib (no third-party router), `log/slog` for logging.
+- Single static binary `preloadd` - no CGO, no runtime deps on the Unraid host.
+- Internally decoupled units, each independently testable (see Architecture).
+- **PHP** (Phase 2 settings page only): PSR-12, kept under `plugin/`. Lint with
+  PHPStan (AST/static) + PHP-CS-Fixer (style); both cover `.php` and Unraid `.page`.
+- Pin GitHub Actions to commit SHAs (with `# vX`), job-level least-privilege
+  `permissions:`, `persist-credentials: false` on checkout.
+
+## Architecture (target)
+
+Five decoupled units inside the `preloadd` binary:
+
+```
+cmd/preloadd/        - daemon entry point
+internal/mediaserver/ - WatchProvider interface + Emby/Jellyfin adapters
+                        (auth, fetch Resume/NextUp/Latest/Sessions, subscribe)
+internal/scorer/      - pure: per-user signals -> ranked, deduped []PreloadTarget
+internal/preloader/   - duration-based head/tail/resume-offset reads into page
+                        cache; mincore warm-detection; byte-budget accounting
+internal/pathmap/     - server path -> host path (docker inspect auto-detect)
+internal/config/      - TOML config + warm-set ledger
+plugin/               - Phase 2: Unraid .plg tree (PHP settings page, rc.d, events)
+```
+
+The media-server client adapts patterns from the **stillwater** repo
+(`~/Developer/stillwater/internal/connection/{emby,jellyfin}`,
+`internal/webhook`): auth headers, SSRF-hardened URL handling
+(`BuildRequestURL`/`ValidateBaseURL`), and webhook parsing. Copy/adapt - do not
+add a cross-repo dependency.
+
+## Common Commands
+
+```bash
+make build        # build bin/preloadd
+make run          # build and run
+make test         # Go tests
+make test-race    # Go tests with race detector
+make cover        # coverage report
+make lint         # golangci-lint
+make fmt          # gofmt + go mod tidy
+make php-lint     # PHPStan + PHP-CS-Fixer dry-run (no-op until plugin/ has PHP)
+make php-fix      # auto-fix PHP style
+make tools        # install golangci-lint + PHP dev deps
+```
+
+See [REQUIREMENTS.md](REQUIREMENTS.md) for what to install.
+
+## Key Rules
+
+- **Page cache is the product.** This never serves or transcodes media; it only
+  reads byte ranges to make the kernel cache them. Reads on bind-mounted paths
+  warm the same host cache (shared kernel).
+- **Watch-state, not mtime.** Preload decisions come from the media server API.
+  Exclude items in an active playback session (already spun-up/resident).
+- **Duration-based sizing.** Size each preload by playback seconds (from API
+  `Bitrate`), not a fixed byte count, so 4K and SD both cover the spin-up window.
+- **Resume from the offset.** For in-progress items, preload at the resume byte
+  offset, not the file head.
+- **Security:** API keys are secrets - keep them out of logs and out of git
+  (`config.toml`/`*.local.toml` are gitignored). Validate the server base URL at
+  the trust boundary (reuse stillwater's `ValidateBaseURL` rationale).
+
+## PR Workflow
+
+Follows the global workflow (`/prep-pr`, `/handle-review`, `/merge-pr`). CI
+(`.github/workflows/ci.yml`) runs Go build/test/lint and PHP lint. Never push or
+open a PR without explicit maintainer go-ahead.
+
+## License
+
+TBD before public release (GPL-3.0 is the convention for Unraid plugins).

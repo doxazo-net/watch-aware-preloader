@@ -1,0 +1,13 @@
+parameters:
+    # Level 6 adds missing-type-hint enforcement on top of the core null/type
+    # safety levels. Raise toward 8-9 as the settings page matures.
+    level: 6
+    paths:
+        - plugin
+    # Unraid plugin pages are PHP but carry the .page extension; analyse both.
+    fileExtensions:
+        - php
+        - page
+    # Unraid injects globals (e.g. $_GET, plugin helpers) and DOCROOT-relative
+    # includes that PHPStan cannot resolve standalone. Tighten as stubs are added.
+    treatPhpDocTypesAsCertain: false
