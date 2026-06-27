@@ -21,6 +21,7 @@ var version = "dev"
 
 func main() {
 	cfgPath := flag.String("config", "config.toml", "path to config file")
+	verify := flag.Bool("verify", false, "run one sweep, then report cache residency and exit")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -51,6 +52,17 @@ func main() {
 	pre := preloader.New(preCfg, pagecache.New(), pathmap.New(rules), preloader.DefaultFS(), log)
 
 	d := app.NewDaemon(cfg, client, pre, log)
+
+	if *verify {
+		budget := d.Budget()
+		stats, err := app.RunOnce(context.Background(), client, cfg.Users.Enabled, pre, budget, log)
+		if err != nil {
+			log.Error("verify sweep failed", "err", err)
+			os.Exit(1)
+		}
+		log.Info("verify sweep done", "preloaded", stats.Preloaded, "skipped", stats.Skipped)
+		return
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	loopErr := d.Loop(ctx)

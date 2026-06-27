@@ -39,6 +39,9 @@ func NewDaemon(cfg *config.Config, p Provider, pre *preloader.Preloader, log *sl
 	return &Daemon{cfg: cfg, p: p, pre: pre, log: log}
 }
 
+// Budget returns the current preload byte budget.
+func (d *Daemon) Budget() int64 { return d.budget() }
+
 func (d *Daemon) budget() int64 {
 	avail, err := sysinfo.AvailableBytes()
 	if err != nil {
