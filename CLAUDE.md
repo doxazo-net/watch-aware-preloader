@@ -1,5 +1,11 @@
 # Watch-Aware Preloader - Claude Code Project Instructions
 
+## >> ON SESSION START / RESUME: read SESSION-STATE.md FIRST <<
+
+`SESSION-STATE.md` (repo root; local-only, git-excluded) is the running checkpoint -
+current status, the immediate next action, and gotchas. Read it before doing anything
+when asked to "resume" or "pick up where we left off".
+
 Plugin display name: **Watch-Aware Preloader**. Binary: `preloadd`. Repo/Go-module
 slug stays kebab-case `watch-aware-preloader`.
 
