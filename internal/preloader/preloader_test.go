@@ -132,6 +132,30 @@ func TestRunResumeOffsetOnlyForResumeTier(t *testing.T) {
 	}
 }
 
+func TestRunWarmedRangesPopulated(t *testing.T) {
+	cache := &fakeCache{resident: -1}
+	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}
+	cfg := testCfg()
+	p := New(cfg, cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	item := core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 25_000_000}
+	targets := []core.PreloadTarget{
+		{Item: item, Tier: core.TierNextUp},
+	}
+	stats := p.Run(context.Background(), targets, 1<<40)
+
+	if len(stats.Warmed) != 1 {
+		t.Fatalf("Warmed = %v, want 1 entry", stats.Warmed)
+	}
+	want := WarmedRange{
+		Path:   "/mnt/user/TV/a.mkv",
+		Offset: 0,
+		Length: HeadBytes(cfg, item),
+	}
+	if stats.Warmed[0] != want {
+		t.Errorf("Warmed[0] = %+v, want %+v", stats.Warmed[0], want)
+	}
+}
+
 func TestRunWarmErrorNotCountedPreloaded(t *testing.T) {
 	cache := &fakeCache{resident: -1, warmErr: io.ErrUnexpectedEOF}
 	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}

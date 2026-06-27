@@ -1,7 +1,11 @@
 package app
 
 import (
+	"io"
+	"log/slog"
 	"testing"
+
+	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
 )
 
 type residentCache struct {
@@ -35,4 +39,34 @@ func TestVerifyResidencyUnknown(t *testing.T) {
 	if known {
 		t.Error("expected known=false on platforms without mincore")
 	}
+}
+
+func TestReportResidency(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("known", func(t *testing.T) {
+		cache := residentCache{resident: 80, known: true}
+		warmed := []preloader.WarmedRange{
+			{Path: "/a", Offset: 0, Length: 100},
+			{Path: "/b", Offset: 0, Length: 100},
+		}
+		mean, anyKnown := ReportResidency(cache, warmed, log)
+		if !anyKnown {
+			t.Fatal("expected anyKnown=true")
+		}
+		if mean != 80.0 {
+			t.Errorf("mean = %v, want 80.0", mean)
+		}
+	})
+
+	t.Run("unknown", func(t *testing.T) {
+		cache := residentCache{known: false}
+		warmed := []preloader.WarmedRange{
+			{Path: "/a", Offset: 0, Length: 100},
+		}
+		_, anyKnown := ReportResidency(cache, warmed, log)
+		if anyKnown {
+			t.Error("expected anyKnown=false on platforms without mincore")
+		}
+	})
 }

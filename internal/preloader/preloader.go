@@ -38,6 +38,13 @@ func (osFS) Stat(path string) (int64, error) {
 // DefaultFS returns an FS backed by the real filesystem.
 func DefaultFS() FS { return osFS{} }
 
+// WarmedRange is a byte range that was warmed into the page cache during a run.
+type WarmedRange struct {
+	Path   string
+	Offset int64
+	Length int64
+}
+
 // RunStats summarizes a preload pass.
 type RunStats struct {
 	Preloaded   int
@@ -45,6 +52,7 @@ type RunStats struct {
 	Missing     int
 	BytesWarmed int64
 	ByTier      map[core.Tier]int
+	Warmed      []WarmedRange
 }
 
 // Preloader executes preload passes.
@@ -134,6 +142,7 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 		stats.Preloaded++
 		stats.BytesWarmed += cost
 		stats.ByTier[t.Tier]++
+		stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: offset, Length: head})
 		p.log.Info("preloaded", "name", t.Item.Name, "tier", t.Tier.String(),
 			"user", t.Item.UserID, "offset", offset, "bytes", head)
 	}

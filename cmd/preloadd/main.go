@@ -95,7 +95,12 @@ func main() {
 			log.Error("verify sweep failed", "err", verifyErr)
 			os.Exit(1)
 		}
-		log.Info("verify sweep done", "preloaded", stats.Preloaded, "skipped", stats.Skipped)
+		mean, known := app.ReportResidency(pagecache.New(), stats.Warmed, log)
+		if known {
+			log.Info("verify complete", "mean_resident_pct", mean, "preloaded", stats.Preloaded, "skipped", stats.Skipped, "missing", stats.Missing)
+		} else {
+			log.Info("verify complete (residency unavailable on this platform - mincore is Linux-only)", "preloaded", stats.Preloaded, "skipped", stats.Skipped, "missing", stats.Missing)
+		}
 
 	case "once":
 		stats, sweepErr := app.RunOnce(context.Background(), client, cfg.Users.Enabled, pre, d.Budget(), log)
