@@ -1,0 +1,26 @@
+[
+  {
+    "Id": "ep1",
+    "Name": "Example Episode",
+    "RunTimeTicks": 12000000000,
+    "MediaSources": [
+      {
+        "Path": "\\\\host\\TV_Shows\\Example Series\\Season 1\\example.s01e01.mkv",
+        "Bitrate": 2877233,
+        "Size": 1173865127
+      }
+    ]
+  },
+  {
+    "Id": "mv1",
+    "Name": "Example Movie",
+    "RunTimeTicks": 60000000000,
+    "MediaSources": [
+      {
+        "Path": "\\\\host\\Movies\\Example Movie (2024)\\example.movie.2024.mkv",
+        "Bitrate": 4854027,
+        "Size": 3246239110
+      }
+    ]
+  }
+]

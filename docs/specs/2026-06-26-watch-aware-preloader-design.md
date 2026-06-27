@@ -25,6 +25,7 @@ byte size for every file, which buffers ~120 s of a low-bitrate SD cartoon but u
 ## 2. Goals / Non-goals
 
 ### Goals
+
 - Preload the media each household user is genuinely likely to play next, using the
   media server's own watch state, not filesystem mtime.
 - Size each preload by *duration* (cover the spin-up window consistently) regardless
@@ -38,6 +39,7 @@ byte size for every file, which buffers ~120 s of a low-bitrate SD cartoon but u
   Community Apps.
 
 ### Non-goals (initially)
+
 - Transcoding, streaming, or any media serving. This only warms the page cache.
 - Replacing the media server's own caching or read-ahead.
 - Phase 1 does not include the web UI or Jellyfin (see Phasing).
@@ -89,6 +91,7 @@ decoupled units:
 ```
 
 ### Units
+
 1. **Media-server client** - Go interface `WatchProvider` with Emby and Jellyfin
    adapters. Exposes `ResumeItems()`, `NextUp()`, `RecentlyAdded()`, `Sessions()`
    (for active-session exclusion), and `Subscribe()` (live playback events). Returns
@@ -100,11 +103,14 @@ decoupled units:
    skips already-resident ranges.
 4. **Path mapper** - server-reported path -> host path; auto-built from
    `docker inspect <server-container>` when the server is a local container, manual
-   override in config.
+   override in config. Backslashes are normalized to forward slashes, so libraries
+   added over SMB that report Windows UNC paths (`\\host\Share\...`) map via a
+   normal longest-prefix rule anchored on the UNC host (e.g. `\\host` -> `/mnt/user`).
 5. **State + config** - TOML config (written by the PHP page in Phase 2, hand-edited
    in Phase 1), in-memory warm-set ledger, dedupe set.
 
 ### Reuse from stillwater (`~/Developer/stillwater`)
+
 The hardest, riskiest layer already exists, production- and UAT-tested:
 - `internal/connection/emby/client.go`, `internal/connection/jellyfin/client.go` -
   auth headers (`Emby UserId="..."`, `MediaBrowser Token="..."`), `Get`, `/Users`,

@@ -18,9 +18,18 @@ max_head_mb = 250
 tail_mb = 1
 
 # Map media-server paths to host paths. Omit if the server reports host paths.
+# Matching is longest-prefix-wins; you can list several [[path_map]] rules.
 [[path_map]]
 from = "/share"
 to = "/mnt/user"
+
+# SMB-added libraries often report Windows UNC paths (e.g. \\host\Share\...).
+# UNC inputs are canonicalized to forward slashes internally, so anchor a rule on
+# the UNC host. Prefer a TOML literal (single-quoted) string to avoid escaping:
+# [[path_map]]
+# from = '\\host'        # literal string - no backslash escaping needed
+# to = "/mnt/user"
+# (A double-quoted basic string would need doubled escaping: from = "\\\\host")
 
 [schedule]
 # NOTE: sweep_seconds and session_poll_seconds apply ONLY in --daemon mode.

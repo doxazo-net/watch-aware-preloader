@@ -74,6 +74,17 @@ func mediaFields() url.Values {
 	return url.Values{"Fields": {"Path,MediaSources"}}
 }
 
+// latestFields is the query for the RecentlyAdded (Latest) tier. Without
+// GroupItems=false the endpoint returns MusicAlbum/Series containers (no Path,
+// no MediaSources); IncludeItemTypes keeps it to warmable video leaves.
+func latestFields() url.Values {
+	return url.Values{
+		"Fields":           {"Path,MediaSources"},
+		"GroupItems":       {"false"},
+		"IncludeItemTypes": {"Movie,Episode"},
+	}
+}
+
 // Users lists Emby user accounts.
 func (c *Client) Users(ctx context.Context) ([]User, error) {
 	var users []User
@@ -99,7 +110,7 @@ func (c *Client) NextUp(ctx context.Context, userID string) ([]core.MediaItem, e
 func (c *Client) RecentlyAdded(ctx context.Context, userID string) ([]core.MediaItem, error) {
 	// /Items/Latest returns a bare array, not an {Items:[]} envelope.
 	var items []embyItem
-	if err := c.get(ctx, "/Users/"+userID+"/Items/Latest", mediaFields(), &items); err != nil {
+	if err := c.get(ctx, "/Users/"+userID+"/Items/Latest", latestFields(), &items); err != nil {
 		return nil, err
 	}
 	out := make([]core.MediaItem, 0, len(items))
