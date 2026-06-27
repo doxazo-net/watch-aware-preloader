@@ -13,6 +13,13 @@ The approved design is in [`docs/specs/2026-06-26-watch-aware-preloader-design.m
 Read it before implementing. Phase 1 (Go engine MVP, Emby, file config) is the
 first deliverable.
 
+**Run model: cron-invoked one-shot is primary** (like Fix Common Problems / Mover),
+not a resident service. `preloadd -once` (also the default) does one full sweep and
+exits; cron re-invokes it each interval to pick up library changes. `--daemon` is an
+optional resident loop (periodic sweep + `/Sessions` poll) for sub-interval reaction;
+`-verify` runs one sweep then reports page-cache residency. `cmd/preloadd` chose this
+over a supervised service to avoid init-script/restart/update complexity.
+
 ## Style and Conventions
 
 - **Go 1.26+**, `net/http` stdlib (no third-party router), `log/slog` for logging.
@@ -28,7 +35,7 @@ first deliverable.
 Five decoupled units inside the `preloadd` binary:
 
 ```
-cmd/preloadd/        - daemon entry point
+cmd/preloadd/        - entry point + run modes (-once default, --daemon, -verify)
 internal/mediaserver/ - WatchProvider interface + Emby/Jellyfin adapters
                         (auth, fetch Resume/NextUp/Latest/Sessions, subscribe)
 internal/scorer/      - pure: per-user signals -> ranked, deduped []PreloadTarget

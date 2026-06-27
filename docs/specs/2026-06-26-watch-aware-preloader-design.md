@@ -27,7 +27,8 @@ byte size for every file, which buffers ~120 s of a low-bitrate SD cartoon but u
   of resolution/bitrate, using metadata the server already provides.
 - Preload resume candidates from the byte offset where playback will resume, not the
   file head.
-- React quickly (event-driven) when playback state changes.
+- Re-evaluate on a schedule (cron one-shot) so library and watch-state changes are
+  picked up each run; optionally react faster via a resident `--daemon` mode.
 - Ship as an Unraid plugin (native `.plg`, host daemon, PHP settings page) supporting
   both Emby and Jellyfin, publishable via the user's `unraid-templates` repo and
   Community Apps.
@@ -170,19 +171,35 @@ These are documented defaults, not user-facing knobs:
   warm-set-size knob, not a safety limit.
 - **Path mapping**: auto-detected from `docker inspect`, manual override available.
 
-## 7. Daemon lifecycle and triggers
+## 7. Run model
 
-- Long-running supervised service. The `.plg` installs an `rc.d` init script
-  (`/etc/rc.d/rc.preloadd`) and Unraid event hooks
-  (`/usr/local/emhttp/plugins/watch-aware-preloader/event/{started,stopping_svcs}`)
-  so the array start/stop lifecycle starts/stops the daemon; restart-on-crash handled
-  by the init script.
-- **Event-driven**: subscribe to playback events (Emby/Jellyfin websocket `/Sessions`
-  preferred, since it needs no extra server-side plugin; webhook supported as an
-  alternative). On play/pause/stop, recompute and preload the affected next targets
-  within seconds.
-- **Periodic sweep backstop**: a low-frequency full recompute (e.g. every few minutes)
-  catches anything missed by events and refills budget after evictions.
+**Decision (revised): cron-invoked one-shot is the primary model; the resident
+daemon is an optional mode.** This matches how Unraid schedules work (Fix Common
+Problems, the Mover, the User Scripts plugin are all cron-invoked one-shot
+programs, not resident services), and it removes the supervision burden
+(init-script, restart-on-crash, surviving plugin updates) the maintainer was
+wary of. The earlier "long-running event-driven service" plan is retained only as
+the opt-in `--daemon` mode.
+
+- **One-shot (`preloadd -once`, also the default with no flag)**: run exactly one
+  full sweep - re-fetch watch state from the API, re-score, warm the page cache
+  within budget - then exit. "One-shot" describes the process lifecycle, not the
+  evaluation frequency: cron re-invokes the program every interval, so each run is
+  a complete fresh evaluation that picks up library changes (new episodes land in
+  the recently-added tier, new resume points and next-up surface, recency fill
+  catches the rest). Worst-case staleness is one cron interval.
+- **Packaging (Phase 2)**: the `.plg` installs a **cron entry** (e.g. every few
+  minutes) invoking `preloadd -once`, plus an on-demand "run now" button. No
+  rc.d init script is required for the default model.
+- **Optional daemon (`preloadd --daemon`)**: the resident loop - a periodic sweep
+  plus a fast `/Sessions` poll that triggers a sweep on playback-state changes,
+  for anyone who wants sub-cron-interval reaction. When used, the `.plg` installs
+  an rc.d init script + Unraid event hooks to supervise it. `sweep_seconds` /
+  `session_poll_seconds` config apply to this mode only.
+- **`preloadd -verify`**: one sweep then report page-cache residency, for testing.
+
+A true websocket subscription (instant, no polling) remains a possible Phase 3
+enhancement to the `--daemon` mode; the cron one-shot model does not need it.
 
 ## 8. Configuration surface (what the user touches)
 
@@ -198,10 +215,12 @@ Phase 1: a TOML file. Phase 2: the PHP settings page writes the same file.
 ## 9. Phasing
 
 Each phase is its own spec -> plan -> build -> ship.
-1. **Phase 1 - Engine MVP**: Go daemon, Emby only, event-driven, tiers 1-3 + tier 5
-   fill, TOML config, runs on the target server. Proves the core. *(First spec.)*
-2. **Phase 2 - Settings UI + packaging**: PHP settings page, `.plg`, init script,
-   event hooks; installable/configurable without editing files.
+1. **Phase 1 - Engine MVP**: Go binary, Emby only, cron one-shot (`-once`) primary
+   with optional `--daemon`, tiers 1-3 + tier 5 fill, TOML config, runs on the
+   target server. Proves the core. *(First spec.)*
+2. **Phase 2 - Settings UI + packaging**: PHP settings page, `.plg`, **cron entry**
+   (+ optional rc.d init script for `--daemon`); installable/configurable without
+   editing files.
 3. **Phase 3 - Jellyfin adapter + binge look-ahead (tier 4)**: second platform; polish.
 4. **Phase 4 - Public release**: Community Apps template, docs, versioned releases.
 

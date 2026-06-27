@@ -10,10 +10,12 @@ next-up episodes, recently-added, and what each household user has been watching
 decide what to warm, and sizes each preload by playback *duration* rather than a fixed
 byte count.
 
-- Native Unraid `.plg` plugin: host daemon (`preloadd`, a single static Go binary) +
+- Native Unraid `.plg` plugin: a single static Go binary (`preloadd`) +
   PHP settings page.
 - Supports Emby and Jellyfin.
-- Event-driven (reacts within seconds of play/pause/stop) with a periodic backstop.
+- Runs as a **cron-invoked one-shot** (`preloadd -once`) like Fix Common Problems and
+  the Mover - each run is a fresh sweep, so library changes are picked up every
+  interval. An optional `--daemon` mode adds sub-minute reaction for those who want it.
 
 ## Status
 
