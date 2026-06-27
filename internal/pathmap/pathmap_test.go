@@ -44,6 +44,27 @@ func TestToHostNormalizesTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestToHostMapsUNCPath(t *testing.T) {
+	// SMB-added Emby/Jellyfin libraries report Windows UNC paths. A rule anchored
+	// on the UNC host/share must rewrite them to the POSIX host root.
+	m := New([]Rule{{From: `\\host`, To: "/mnt/user"}})
+	got, ok := m.ToHost(`\\host\Movies\Example (2024)\example.mkv`)
+	if !ok {
+		t.Fatal("expected UNC path to match")
+	}
+	if want := "/mnt/user/Movies/Example (2024)/example.mkv"; got != want {
+		t.Errorf("ToHost = %q, want %q", got, want)
+	}
+}
+
+func TestToHostUNCNoMidSegmentMatch(t *testing.T) {
+	// The segment-boundary guard must still hold after backslash normalization.
+	m := New([]Rule{{From: `\\host`, To: "/mnt/user"}})
+	if got, ok := m.ToHost(`\\hostXYZ\Movies\example.mkv`); ok {
+		t.Errorf("expected no match for mid-segment UNC host, got %q", got)
+	}
+}
+
 func TestToHostEmptyRulesPassThrough(t *testing.T) {
 	// With no rules, server path is assumed already host-correct.
 	m := New(nil)

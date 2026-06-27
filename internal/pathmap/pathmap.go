@@ -30,10 +30,12 @@ func New(rules []Rule) *Mapper {
 	return &Mapper{rules: cp}
 }
 
-// normalizePrefix strips a redundant trailing slash so the boundary check in
-// ToHost ("/share/" + "/") does not double the separator and miss matches.
-// Root ("/") is preserved.
+// normalizePrefix canonicalizes a rule prefix: convert backslashes to forward
+// slashes (so Windows/UNC server paths like `\\host\Share` match), then strip a
+// redundant trailing slash so the boundary check in ToHost ("/share/" + "/")
+// does not double the separator and miss matches. Root ("/") is preserved.
 func normalizePrefix(s string) string {
+	s = strings.ReplaceAll(s, `\`, "/")
 	if s == "/" {
 		return s
 	}
@@ -47,6 +49,11 @@ func (m *Mapper) ToHost(serverPath string) (string, bool) {
 	if len(m.rules) == 0 {
 		return serverPath, true
 	}
+	// Match against the same canonical form the rules were normalized into, so a
+	// Windows/UNC server path (`\\host\Share\...`) resolves via the existing
+	// longest-prefix logic. Done after the empty-rules pass-through so that case
+	// still returns the original path untouched.
+	serverPath = strings.ReplaceAll(serverPath, `\`, "/")
 	for _, r := range m.rules {
 		if serverPath == r.From || strings.HasPrefix(serverPath, r.From+"/") {
 			return r.To + strings.TrimPrefix(serverPath, r.From), true

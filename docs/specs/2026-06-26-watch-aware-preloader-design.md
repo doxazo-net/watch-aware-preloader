@@ -100,7 +100,9 @@ decoupled units:
    skips already-resident ranges.
 4. **Path mapper** - server-reported path -> host path; auto-built from
    `docker inspect <server-container>` when the server is a local container, manual
-   override in config.
+   override in config. Backslashes are normalized to forward slashes, so libraries
+   added over SMB that report Windows UNC paths (`\\host\Share\...`) map via a
+   normal longest-prefix rule anchored on the UNC host (e.g. `\\host` -> `/mnt/user`).
 5. **State + config** - TOML config (written by the PHP page in Phase 2, hand-edited
    in Phase 1), in-memory warm-set ledger, dedupe set.
 

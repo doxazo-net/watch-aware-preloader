@@ -4,10 +4,56 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestRecentlyAddedQueryParams(t *testing.T) {
+	// Latest must request flattened, video-only leaf items, else it returns
+	// MusicAlbum/Series containers with no warmable media.
+	qCh := make(chan url.Values, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		qCh <- r.URL.Query()
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL, "k", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.RecentlyAdded(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	q := <-qCh
+	if q.Get("GroupItems") != "false" {
+		t.Errorf("GroupItems = %q, want false", q.Get("GroupItems"))
+	}
+	if q.Get("IncludeItemTypes") != "Movie,Episode" {
+		t.Errorf("IncludeItemTypes = %q, want Movie,Episode", q.Get("IncludeItemTypes"))
+	}
+	if f := q.Get("Fields"); !strings.Contains(f, "Path") || !strings.Contains(f, "MediaSources") {
+		t.Errorf("Fields = %q, want to contain Path,MediaSources", f)
+	}
+}
+
+func TestRecentlyAddedMapsLeafItems(t *testing.T) {
+	c := serveFixture(t, "latest.json")
+	items, err := c.RecentlyAdded(context.Background(), "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("got %d items, want 2", len(items))
+	}
+	for _, it := range items {
+		if it.ServerPath == "" || it.BitrateBps == 0 || it.SizeBytes == 0 {
+			t.Errorf("leaf item missing media info: %+v", it)
+		}
+	}
+}
 
 func serveFixture(t *testing.T, file string) *Client {
 	t.Helper()
