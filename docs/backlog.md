@@ -48,3 +48,22 @@ data. Feeds a follow-up spec if (b) is justified.
 
 **Relates to:** the preloader's `HeadBytes` sizing (Phase 1 Task 6) and the path
 mapper (Phase 1 Task 3).
+
+## B2: Linux-tagged mincore residency test
+
+The `internal/pagecache` Linux residency path (`resident_linux.go`, mmap +
+`SYS_MINCORE`) is currently verified only by cross-compilation, not by a
+functional test - the unit tests cover portable warming on the dev host (macOS),
+where residency returns `ok=false`. Add a `//go:build linux` test that writes a
+temp file, warms a range, and asserts `Resident` reports it resident. This also
+guards against the boundary-page over-count noted in the final review (mincore
+counts a full page for the partial first page when `offset` is not page-aligned -
+relevant to resume-offset reads).
+
+## B3: RecentlyAdded bare-array fixture test
+
+`emby.RecentlyAdded` decodes `/Users/{id}/Items/Latest` as a BARE JSON array,
+unlike Resume/NextUp which use the `{Items:[...]}` envelope. Only the envelope
+path has a fixture test (`TestResumeMapsFields`). Add a fixture + test for the
+bare-array decode (and light smoke tests for `NextUp`/`NowPlayingIDs`) to lock the
+response shapes against API drift.
