@@ -42,7 +42,7 @@ func residentImpl(path string, offset, length int64) (int64, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	defer func() { _ = unix.Munmap(data) }() //nolint:errcheck // cleanup; error not actionable
+	defer func() { _ = unix.Munmap(data) }()
 
 	pages := (mmapLen + pageSize - 1) / pageSize
 	vec := make([]byte, pages)
