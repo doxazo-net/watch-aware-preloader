@@ -2,7 +2,7 @@
     "name": "sydlexius/watch-aware-preloader",
     "description": "PHP dev tooling for the watch-aware-preloader Unraid plugin settings page",
     "type": "project",
-    "license": "proprietary",
+    "license": "MIT",
     "require": {
         "php": ">=8.1"
     },

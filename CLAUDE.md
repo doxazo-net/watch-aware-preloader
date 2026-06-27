@@ -85,4 +85,10 @@ open a PR without explicit maintainer go-ahead.
 
 ## License
 
-TBD before public release (GPL-3.0 is the convention for Unraid plugins).
+**MIT** (see [LICENSE](LICENSE)).
+
+Licensing caveat: **stillwater is GPL-3.0.** Reimplement its Emby/Jellyfin client
+*patterns* (auth header format, endpoint set, URL-validation strategy) in fresh
+code - approaches and API shapes are not copyrightable - but do **not** paste
+stillwater source verbatim into this MIT repo. If GPL code ever genuinely needs to
+be incorporated, the project license must be revisited first.

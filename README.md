@@ -24,4 +24,4 @@ Phase 1 (engine MVP, Emby, config via file) is the first deliverable.
 
 ## License
 
-TBD before public release.
+[MIT](LICENSE).
