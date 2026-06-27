@@ -34,7 +34,7 @@ echo "OK"
 echo ""
 echo "=== golangci-lint ==="
 if ! command -v golangci-lint >/dev/null 2>&1; then
-    echo "SKIP: golangci-lint not installed (install: brew install golangci-lint or go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)"
+    echo "SKIP: golangci-lint not installed (install the repo's documented golangci-lint v2 toolchain -- see REQUIREMENTS.md)"
 else
     golangci-lint run ./...
     echo "OK"

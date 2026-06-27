@@ -103,5 +103,14 @@ func (c *Config) Validate() error {
 	if c.Preload.TargetSeconds < 1 {
 		return fmt.Errorf("preload.target_seconds must be >= 1")
 	}
+	if c.Preload.MinHeadMB < 0 || c.Preload.MaxHeadMB < 0 || c.Preload.TailMB < 0 {
+		return fmt.Errorf("preload min_head_mb, max_head_mb, and tail_mb must be >= 0")
+	}
+	if c.Schedule.SweepSeconds < 1 {
+		return fmt.Errorf("schedule.sweep_seconds must be >= 1")
+	}
+	if c.Schedule.SessionPollSeconds < 1 {
+		return fmt.Errorf("schedule.session_poll_seconds must be >= 1")
+	}
 	return nil
 }

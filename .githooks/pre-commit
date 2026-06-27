@@ -40,9 +40,8 @@ pass "gofmt"
 # 2. go vet
 # --------------------------------------------------------------------------
 if ! go vet ./... 2>/tmp/pre-commit-vet.log; then
-    fail "go vet (see output above):"
     cat /tmp/pre-commit-vet.log >&2
-    exit 1
+    fail "go vet"
 fi
 pass "go vet"
 

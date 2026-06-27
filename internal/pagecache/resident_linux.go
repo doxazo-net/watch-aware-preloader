@@ -48,21 +48,33 @@ func residentImpl(path string, offset, length int64) (int64, bool, error) {
 	vec := make([]byte, pages)
 	// unix.Mincore is not available as a Go wrapper; call the syscall directly.
 	_, _, errno := unix.Syscall(unix.SYS_MINCORE,
-		uintptr(unsafe.Pointer(&data[0])),
+		uintptr(unsafe.Pointer(&data[0])), //nolint:gosec // G103: audited mincore syscall; mincore requires the mapped region address
 		uintptr(len(data)),
-		uintptr(unsafe.Pointer(&vec[0])))
+		uintptr(unsafe.Pointer(&vec[0]))) //nolint:gosec // G103: audited mincore syscall; kernel writes residency bits into vec
 	if errno != 0 {
 		return 0, false, errno
 	}
 
+	// Count only the overlap of each resident page with the requested range.
+	// When offset is not page-aligned, the first and last pages extend beyond
+	// [offset, offset+length), so adding a full pageSize per page overcounts.
+	requestEnd := offset + length
 	var resident int64
-	for _, v := range vec {
-		if v&0x1 == 1 { // low bit set => page resident
-			resident += pageSize
+	for i, v := range vec {
+		if v&0x1 == 0 { // low bit clear => page not resident
+			continue
 		}
-	}
-	if resident > length {
-		resident = length
+		pageStart := alignedOff + int64(i)*pageSize
+		pageEnd := pageStart + pageSize
+		if pageStart < offset {
+			pageStart = offset
+		}
+		if pageEnd > requestEnd {
+			pageEnd = requestEnd
+		}
+		if pageStart < pageEnd {
+			resident += pageEnd - pageStart
+		}
 	}
 	return resident, true, nil
 }

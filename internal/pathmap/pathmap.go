@@ -21,11 +21,23 @@ type Mapper struct {
 // first, giving deterministic results regardless of input order.
 func New(rules []Rule) *Mapper {
 	cp := make([]Rule, len(rules))
-	copy(cp, rules)
+	for i, r := range rules {
+		cp[i] = Rule{From: normalizePrefix(r.From), To: normalizePrefix(r.To)}
+	}
 	sort.SliceStable(cp, func(i, j int) bool {
 		return len(cp[i].From) > len(cp[j].From)
 	})
 	return &Mapper{rules: cp}
+}
+
+// normalizePrefix strips a redundant trailing slash so the boundary check in
+// ToHost ("/share/" + "/") does not double the separator and miss matches.
+// Root ("/") is preserved.
+func normalizePrefix(s string) string {
+	if s == "/" {
+		return s
+	}
+	return strings.TrimRight(s, "/")
 }
 
 // ToHost rewrites serverPath. With no rules, the path passes through unchanged

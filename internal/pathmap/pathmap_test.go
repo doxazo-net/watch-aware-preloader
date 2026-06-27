@@ -31,6 +31,19 @@ func TestToHostNoMidSegmentMatch(t *testing.T) {
 	}
 }
 
+func TestToHostNormalizesTrailingSlash(t *testing.T) {
+	// A common config spelling "/share/" must still match "/share/movie.mkv"
+	// without the boundary check turning into "/share//".
+	m := New([]Rule{{From: "/share/", To: "/mnt/user/"}})
+	got, ok := m.ToHost("/share/movie.mkv")
+	if !ok {
+		t.Fatal("expected a match for trailing-slash prefix")
+	}
+	if want := "/mnt/user/movie.mkv"; got != want {
+		t.Errorf("ToHost = %q, want %q", got, want)
+	}
+}
+
 func TestToHostEmptyRulesPassThrough(t *testing.T) {
 	// With no rules, server path is assumed already host-correct.
 	m := New(nil)

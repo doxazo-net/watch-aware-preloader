@@ -114,6 +114,51 @@ func TestRunResumeUsesOffset(t *testing.T) {
 	}
 }
 
+func TestRunResumeOffsetBitrateFallback(t *testing.T) {
+	cache := &fakeCache{resident: -1}
+	fs := fakeFS{"/mnt/user/TV/a.mkv": 600 << 20}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// No BitrateBps: bitrate must be derived from SizeBytes/Runtime, else the
+	// resume item wrongly warms from the file head (offset 0).
+	it := core.MediaItem{
+		ID: "a", ServerPath: "/mnt/user/TV/a.mkv",
+		SizeBytes: 600 << 20, Runtime: 20 * time.Minute, ResumeOffset: 10 * time.Minute,
+	}
+	p.Run(context.Background(), []core.PreloadTarget{{Item: it, Tier: core.TierResume}}, 1<<40)
+	if len(cache.warmed) == 0 {
+		t.Fatal("expected a warm call")
+	}
+	// bps = 600MiB/1200s*8; offset = 600s * bps/8 = 300MiB.
+	if want := int64(300 << 20); cache.warmed[0].offset != want {
+		t.Errorf("resume offset = %d, want %d (bitrate fallback)", cache.warmed[0].offset, want)
+	}
+}
+
+func TestRunTailOverlapNotDoubleCharged(t *testing.T) {
+	cache := &fakeCache{resident: -1} // always warm
+	const size = 5 << 20
+	fs := fakeFS{"/m/a.mkv": size}
+	// Head clamps to 4MiB; tail (2MiB) would start at 3MiB, overlapping the head
+	// window [0,4MiB), so it must clamp to [4MiB,5MiB) = 1MiB, not a full 2MiB.
+	cfg := Config{TargetSeconds: 20, MinHeadBytes: 1 << 20, MaxHeadBytes: 4 << 20, TailBytes: 2 << 20}
+	p := New(cfg, cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	targets := []core.PreloadTarget{{
+		Item: core.MediaItem{ID: "a", ServerPath: "/m/a.mkv", BitrateBps: 1_000_000_000},
+		Tier: core.TierNextUp,
+	}}
+	stats := p.Run(context.Background(), targets, 1<<40)
+	if want := int64(5 << 20); stats.BytesWarmed != want {
+		t.Errorf("BytesWarmed = %d, want %d (overlapping tail must not be double-charged)", stats.BytesWarmed, want)
+	}
+	if len(cache.warmed) != 2 {
+		t.Fatalf("want 2 warm calls (head+tail), got %d: %+v", len(cache.warmed), cache.warmed)
+	}
+	if cache.warmed[1].offset != 4<<20 || cache.warmed[1].length != 1<<20 {
+		t.Errorf("tail warm = offset %d len %d, want offset %d len %d",
+			cache.warmed[1].offset, cache.warmed[1].length, 4<<20, 1<<20)
+	}
+}
+
 func TestRunResumeOffsetOnlyForResumeTier(t *testing.T) {
 	cache := &fakeCache{resident: -1}
 	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}

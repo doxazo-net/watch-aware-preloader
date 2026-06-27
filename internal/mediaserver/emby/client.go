@@ -40,10 +40,17 @@ func New(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
+	// Refuse to follow redirects: X-Emby-Token is a non-sensitive header that
+	// net/http would re-send on a cross-host 30x hop, leaking the API key.
+	// Copy the client so we don't mutate the caller's value.
+	hc := *httpClient
+	hc.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	return &Client{
 		base:   strings.TrimRight(u.Scheme+"://"+u.Host+u.Path, "/"),
 		apiKey: apiKey,
-		http:   httpClient,
+		http:   &hc,
 	}, nil
 }
 

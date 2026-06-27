@@ -106,52 +106,102 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 			continue
 		}
 
-		head := HeadBytes(p.cfg, t.Item)
-		offset := int64(0)
-		if t.Tier == core.TierResume {
-			offset = resumeOffsetBytes(t.Item)
-		}
-		if offset >= size {
-			offset = 0
-		}
-		if offset+head > size {
-			head = size - offset
-		}
+		pl := p.planWarm(t, size)
 
-		// Skip ranges already fully resident (costs no budget).
-		if resident, known, rerr := p.cache.Resident(hostPath, offset, head); rerr == nil && known && resident >= head {
+		// Skip only when both the head window and the EOF tail are resident;
+		// a hot head with a cold tail must still warm the tail (container
+		// metadata at EOF can otherwise force disk I/O on open).
+		if p.resident(hostPath, pl.offset, pl.head) && p.resident(hostPath, pl.tailOffset, pl.tail) {
 			stats.Skipped++
 			stats.ByTier[t.Tier]++
 			continue
 		}
 
-		cost := head + p.cfg.TailBytes
+		// Charge only the unique bytes actually warmed (tail may be zero or
+		// clamped near EOF), so the budget and BytesWarmed stay accurate.
+		cost := pl.head + pl.tail
 		if used+cost > budgetBytes {
 			break // budget exhausted; remaining lower-priority targets dropped
 		}
 
-		if err := p.cache.Warm(hostPath, offset, head); err != nil {
+		if err := p.cache.Warm(hostPath, pl.offset, pl.head); err != nil {
 			stats.Missing++
 			p.log.Warn("warm failed", "path", hostPath, "err", err)
 			continue
 		}
-		if p.cfg.TailBytes > 0 && size > p.cfg.TailBytes {
-			_ = p.cache.Warm(hostPath, size-p.cfg.TailBytes, p.cfg.TailBytes) // best-effort: tail (e.g. MP4 moov) warm failure is non-fatal
+		if pl.tail > 0 {
+			_ = p.cache.Warm(hostPath, pl.tailOffset, pl.tail) // best-effort: tail (e.g. MP4 moov) warm failure is non-fatal
 		}
 		used += cost
 		stats.Preloaded++
 		stats.BytesWarmed += cost
 		stats.ByTier[t.Tier]++
-		stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: offset, Length: head})
+		stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: pl.offset, Length: pl.head})
 		p.log.Info("preloaded", "name", t.Item.Name, "tier", t.Tier.String(),
-			"user", t.Item.UserID, "offset", offset, "bytes", head)
+			"user", t.Item.UserID, "offset", pl.offset, "bytes", pl.head)
 	}
 	return stats
 }
 
+// warmRanges holds the byte ranges to warm for a single target: the head window
+// (sized by playback duration, at the resume offset for in-progress items) and
+// the EOF tail, clamped so the two never overlap.
+type warmRanges struct {
+	offset, head     int64
+	tailOffset, tail int64
+}
+
+// planWarm computes the head and tail ranges for an item against its file size.
+func (p *Preloader) planWarm(t core.PreloadTarget, size int64) warmRanges {
+	head := HeadBytes(p.cfg, t.Item)
+	offset := int64(0)
+	if t.Tier == core.TierResume {
+		offset = resumeOffsetBytes(t.Item)
+	}
+	if offset >= size {
+		offset = 0
+	}
+	if offset+head > size {
+		head = size - offset
+	}
+
+	tailOffset, tail := int64(0), int64(0)
+	if p.cfg.TailBytes > 0 && size > p.cfg.TailBytes {
+		tailOffset = size - p.cfg.TailBytes
+		tail = p.cfg.TailBytes
+		if tailOffset < offset+head { // tail would overlap the head window
+			tailOffset = offset + head
+			tail = size - tailOffset
+			if tail < 0 {
+				tail = 0
+			}
+		}
+	}
+	return warmRanges{offset: offset, head: head, tailOffset: tailOffset, tail: tail}
+}
+
+// resident reports whether [offset, length) is already fully page-cache resident.
+// A zero-length range is trivially resident; unknown residency counts as not.
+func (p *Preloader) resident(path string, offset, length int64) bool {
+	if length == 0 {
+		return true
+	}
+	r, known, err := p.cache.Resident(path, offset, length)
+	return err == nil && known && r >= length
+}
+
 func resumeOffsetBytes(it core.MediaItem) int64 {
-	if it.ResumeOffset <= 0 || it.BitrateBps <= 0 {
+	if it.ResumeOffset <= 0 {
 		return 0
 	}
-	return int64(it.ResumeOffset.Seconds()) * it.BitrateBps / 8
+	// Mirror HeadBytes: derive bitrate from size/runtime when the API omits it,
+	// so resume items still warm from the saved position instead of the head.
+	bps := it.BitrateBps
+	if bps <= 0 && it.Runtime > 0 {
+		bps = int64(float64(it.SizeBytes) / it.Runtime.Seconds() * 8)
+	}
+	if bps <= 0 {
+		return 0
+	}
+	return int64(it.ResumeOffset.Seconds()) * bps / 8
 }
