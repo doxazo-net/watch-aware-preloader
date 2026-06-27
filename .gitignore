@@ -1,0 +1,15 @@
+# Go build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Local config / secrets (API keys live here)
+*.local.toml
+config.toml
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
