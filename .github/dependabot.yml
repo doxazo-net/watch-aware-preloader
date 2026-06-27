@@ -8,6 +8,16 @@ updates:
     commit-message:
       prefix: "deps"
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+    # Batch routine minor/patch bumps into one PR to cut review noise; majors
+    # still come as individual PRs so breaking changes are reviewed in isolation.
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
@@ -17,3 +27,11 @@ updates:
     commit-message:
       prefix: "ci"
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    # Action pins are all SHA-pinned (with # vX); group every bump together.
+    groups:
+      actions-all:
+        patterns:
+          - "*"
