@@ -92,6 +92,15 @@ func TestValidateRejectsNegativePreloadSizes(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInvertedHeadBounds(t *testing.T) {
+	c := validBase()
+	c.Preload.MinHeadMB = 100
+	c.Preload.MaxHeadMB = 50
+	if err := c.Validate(); err == nil {
+		t.Error("expected error for min_head_mb > max_head_mb (min would be silently meaningless)")
+	}
+}
+
 func TestValidateRejectsNonPositiveIntervals(t *testing.T) {
 	for _, tc := range []struct {
 		name string

@@ -7,32 +7,59 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // Client talks to a single Emby server with an API key.
 type Client struct {
-	base   string
+	base   *url.URL
 	apiKey string
 	http   *http.Client
 }
 
-// New validates the base URL and returns a Client. The base URL must be
-// http/https with no embedded credentials, query, or fragment.
-func New(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
-	u, err := url.Parse(baseURL)
+// validateBaseURL enforces the media-server trust boundary. The configured base
+// URL must be a plain absolute http/https URL with a host and nothing that could
+// divert a request elsewhere: no opaque form, embedded credentials, query, or
+// fragment. It returns the normalized base (scheme/host/path only, trailing
+// slash trimmed) so request URLs can be built with url.URL.JoinPath rather than
+// string concatenation, which keeps a server-supplied path element from
+// escaping the configured host.
+//
+// Private/LAN hosts are intentionally allowed: this tool's purpose is to talk to
+// a media server that normally lives on the local network, so blocking RFC1918
+// addresses would break the documented setup rather than harden it.
+func validateBaseURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing base URL: %w", err)
+	}
+	if u.Opaque != "" {
+		return nil, fmt.Errorf("base URL must be a plain absolute URL, not opaque")
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("base URL scheme must be http or https, got %q", u.Scheme)
 	}
-	if u.Host == "" {
+	if u.Hostname() == "" {
 		return nil, fmt.Errorf("base URL has no host")
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return nil, fmt.Errorf("base URL must not contain credentials, query, or fragment")
+	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("base URL has invalid port %q", p)
+		}
+	}
+	return &url.URL{Scheme: u.Scheme, Host: u.Host, Path: strings.TrimRight(u.Path, "/")}, nil
+}
+
+// New validates the base URL at the trust boundary and returns a Client.
+func New(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
+	base, err := validateBaseURL(baseURL)
+	if err != nil {
+		return nil, err
 	}
 	if apiKey == "" {
 		return nil, fmt.Errorf("api key is required")
@@ -48,18 +75,20 @@ func New(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
 		return http.ErrUseLastResponse
 	}
 	return &Client{
-		base:   strings.TrimRight(u.Scheme+"://"+u.Host+u.Path, "/"),
+		base:   base,
 		apiKey: apiKey,
 		http:   &hc,
 	}, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values, out any) error {
-	full := c.base + path
+	// JoinPath joins and cleans the path against the validated base, so a path
+	// element can never redirect the request to another host.
+	u := c.base.JoinPath(path)
 	if len(query) > 0 {
-		full += "?" + query.Encode()
+		u.RawQuery = query.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return err
 	}

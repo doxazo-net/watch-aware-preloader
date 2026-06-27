@@ -159,6 +159,32 @@ func TestRunTailOverlapNotDoubleCharged(t *testing.T) {
 	}
 }
 
+func TestRunSmallFileWarmsTail(t *testing.T) {
+	cache := &fakeCache{resident: -1} // always warm
+	const size = 3 << 20
+	fs := fakeFS{"/m/a.mkv": size}
+	// File (3MiB) is below TailBytes (4MiB) and the head clamps to 2MiB, stopping
+	// before EOF; the [2MiB,3MiB) suffix must still be warmed (regression: the old
+	// `size > TailBytes` guard left it cold).
+	cfg := Config{TargetSeconds: 20, MinHeadBytes: 1 << 20, MaxHeadBytes: 2 << 20, TailBytes: 4 << 20}
+	p := New(cfg, cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	targets := []core.PreloadTarget{{
+		Item: core.MediaItem{ID: "a", ServerPath: "/m/a.mkv", BitrateBps: 1_000_000_000},
+		Tier: core.TierNextUp,
+	}}
+	stats := p.Run(context.Background(), targets, 1<<40)
+	if len(cache.warmed) != 2 {
+		t.Fatalf("want 2 warm calls (head+tail), got %d: %+v", len(cache.warmed), cache.warmed)
+	}
+	if cache.warmed[1].offset != 2<<20 || cache.warmed[1].length != 1<<20 {
+		t.Errorf("tail warm = offset %d len %d, want offset %d len %d",
+			cache.warmed[1].offset, cache.warmed[1].length, 2<<20, 1<<20)
+	}
+	if want := int64(3 << 20); stats.BytesWarmed != want {
+		t.Errorf("BytesWarmed = %d, want %d", stats.BytesWarmed, want)
+	}
+}
+
 func TestRunResumeOffsetOnlyForResumeTier(t *testing.T) {
 	cache := &fakeCache{resident: -1}
 	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}

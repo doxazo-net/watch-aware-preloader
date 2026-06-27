@@ -166,9 +166,15 @@ func (p *Preloader) planWarm(t core.PreloadTarget, size int64) warmRanges {
 	}
 
 	tailOffset, tail := int64(0), int64(0)
-	if p.cfg.TailBytes > 0 && size > p.cfg.TailBytes {
+	if p.cfg.TailBytes > 0 {
+		// Anchor the tail to EOF; for a file at or below TailBytes this starts at
+		// 0 so the whole suffix is covered (a small file whose head stops short
+		// of EOF would otherwise leave the end cold).
 		tailOffset = size - p.cfg.TailBytes
-		tail = p.cfg.TailBytes
+		if tailOffset < 0 {
+			tailOffset = 0
+		}
+		tail = size - tailOffset
 		if tailOffset < offset+head { // tail would overlap the head window
 			tailOffset = offset + head
 			tail = size - tailOffset

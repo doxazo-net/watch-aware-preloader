@@ -106,6 +106,10 @@ func (c *Config) Validate() error {
 	if c.Preload.MinHeadMB < 0 || c.Preload.MaxHeadMB < 0 || c.Preload.TailMB < 0 {
 		return fmt.Errorf("preload min_head_mb, max_head_mb, and tail_mb must be >= 0")
 	}
+	if c.Preload.MaxHeadMB > 0 && c.Preload.MinHeadMB > c.Preload.MaxHeadMB {
+		return fmt.Errorf("preload.min_head_mb (%d) must be <= preload.max_head_mb (%d)",
+			c.Preload.MinHeadMB, c.Preload.MaxHeadMB)
+	}
 	if c.Schedule.SweepSeconds < 1 {
 		return fmt.Errorf("schedule.sweep_seconds must be >= 1")
 	}
