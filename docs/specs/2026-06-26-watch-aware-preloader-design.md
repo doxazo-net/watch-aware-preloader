@@ -25,6 +25,7 @@ byte size for every file, which buffers ~120 s of a low-bitrate SD cartoon but u
 ## 2. Goals / Non-goals
 
 ### Goals
+
 - Preload the media each household user is genuinely likely to play next, using the
   media server's own watch state, not filesystem mtime.
 - Size each preload by *duration* (cover the spin-up window consistently) regardless
@@ -38,6 +39,7 @@ byte size for every file, which buffers ~120 s of a low-bitrate SD cartoon but u
   Community Apps.
 
 ### Non-goals (initially)
+
 - Transcoding, streaming, or any media serving. This only warms the page cache.
 - Replacing the media server's own caching or read-ahead.
 - Phase 1 does not include the web UI or Jellyfin (see Phasing).
@@ -89,6 +91,7 @@ decoupled units:
 ```
 
 ### Units
+
 1. **Media-server client** - Go interface `WatchProvider` with Emby and Jellyfin
    adapters. Exposes `ResumeItems()`, `NextUp()`, `RecentlyAdded()`, `Sessions()`
    (for active-session exclusion), and `Subscribe()` (live playback events). Returns
@@ -107,6 +110,7 @@ decoupled units:
    in Phase 1), in-memory warm-set ledger, dedupe set.
 
 ### Reuse from stillwater (`~/Developer/stillwater`)
+
 The hardest, riskiest layer already exists, production- and UAT-tested:
 - `internal/connection/emby/client.go`, `internal/connection/jellyfin/client.go` -
   auth headers (`Emby UserId="..."`, `MediaBrowser Token="..."`), `Get`, `/Users`,

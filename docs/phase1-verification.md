@@ -79,9 +79,11 @@ scp config.example.toml root@outatime:/boot/config/plugins/preloadd/config.toml
 docker inspect emby --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
 ```
 
-Confirm `[[path_map]] from/to` rewrites the server-reported path (the
-`Destination` inside the container, e.g. `/share`) to the host path (the
-`Source`, e.g. `/mnt/user`). Update `config.toml` if they differ.
+Confirm `[[path_map]] from/to` rewrites the server-reported path to the host
+path. Emby here reports Windows UNC paths (e.g. `\\outatime\<Share>\...`), so the
+rule anchors on the UNC host (`\\outatime` -> `/mnt/user`). If your server instead
+reports the container destination (e.g. `/share`), map that to the `Source`
+(e.g. `/mnt/user`). Update `config.toml` so the prefix matches the host root.
 
 ### 2. Status visibility (`-verify` per-item tier/user log + residency)
 

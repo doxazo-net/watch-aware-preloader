@@ -24,7 +24,7 @@ from = "/share"
 to = "/mnt/user"
 
 # SMB-added libraries often report Windows UNC paths (e.g. \\host\Share\...).
-# Backslashes are normalized to forward slashes internally, so anchor a rule on
+# UNC inputs are canonicalized to forward slashes internally, so anchor a rule on
 # the UNC host. Prefer a TOML literal (single-quoted) string to avoid escaping:
 # [[path_map]]
 # from = '\\host'        # literal string - no backslash escaping needed
