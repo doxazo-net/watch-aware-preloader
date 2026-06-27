@@ -28,7 +28,7 @@ func (c *osCache) Warm(path string, offset, length int64) error {
 	if length <= 0 {
 		return nil
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path is operator-configured media, opening it is this package's purpose
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import "time"
 // Tier is the preload priority class; a lower value is higher priority.
 type Tier int
 
+// Preload priority tiers; a lower value is a higher priority.
 const (
 	TierResume        Tier = iota // recent incompletes, not currently playing
 	TierNextUp                    // next episode of an active series

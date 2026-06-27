@@ -52,7 +52,7 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 	if len(query) > 0 {
 		full += "?" + query.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, http.NoBody)
 	if err != nil {
 		return err
 	}
