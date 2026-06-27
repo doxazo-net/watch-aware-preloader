@@ -23,5 +23,9 @@ from = "/share"
 to = "/mnt/user"
 
 [schedule]
-sweep_seconds = 60          # full re-evaluation interval
-session_poll_seconds = 5    # how often to poll /Sessions for live changes
+# NOTE: sweep_seconds and session_poll_seconds apply ONLY in --daemon mode.
+# In the default/cron one-shot mode (the default, or explicit -once), scheduling
+# is controlled by the cron interval that invokes `preloadd` (or `preloadd -once`);
+# these values are ignored.
+sweep_seconds = 60          # full re-evaluation interval (daemon mode only)
+session_poll_seconds = 5    # how often to poll /Sessions for live changes (daemon mode only)
