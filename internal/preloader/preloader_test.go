@@ -15,6 +15,7 @@ import (
 type fakeCache struct {
 	warmed   []warmCall
 	resident int64
+	warmErr  error // returned by Warm when set
 }
 type warmCall struct {
 	path           string
@@ -23,7 +24,7 @@ type warmCall struct {
 
 func (f *fakeCache) Warm(path string, offset, length int64) error {
 	f.warmed = append(f.warmed, warmCall{path, offset, length})
-	return nil
+	return f.warmErr
 }
 func (f *fakeCache) Resident(_ string, _, length int64) (int64, bool, error) {
 	if f.resident < 0 {
@@ -64,10 +65,13 @@ func TestHeadBytesClampsLow(t *testing.T) {
 }
 
 func TestHeadBytesFallbackToSizeOverRuntime(t *testing.T) {
-	it := core.MediaItem{SizeBytes: 600 << 20, Runtime: 45 * time.Minute} // ~bitrate
-	got := HeadBytes(testCfg(), it)
-	if got <= 0 {
-		t.Fatal("expected positive head bytes from size/runtime fallback")
+	// 600 MiB over 20 min => ~4.2 Mbps => 20s head ~10 MiB, above the 8 MiB floor.
+	// A fallback that silently clamps to MinHeadBytes would return exactly 8 MiB and fail this check.
+	cfg := testCfg()
+	it := core.MediaItem{SizeBytes: 600 << 20, Runtime: 20 * time.Minute}
+	got := HeadBytes(cfg, it)
+	if got <= cfg.MinHeadBytes {
+		t.Fatalf("HeadBytes = %d, want strictly > MinHeadBytes (%d); fallback may be clamping to floor", got, cfg.MinHeadBytes)
 	}
 }
 
@@ -107,5 +111,37 @@ func TestRunResumeUsesOffset(t *testing.T) {
 	// offset = 600s * 8e6/8 = 600 * 1e6 = 600_000_000 bytes
 	if cache.warmed[0].offset != 600_000_000 {
 		t.Errorf("resume offset = %d, want 600000000", cache.warmed[0].offset)
+	}
+}
+
+func TestRunResumeOffsetOnlyForResumeTier(t *testing.T) {
+	cache := &fakeCache{resident: -1}
+	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// Same item as TestRunResumeUsesOffset but Tier=TierNextUp; offset must NOT be applied.
+	targets := []core.PreloadTarget{{
+		Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 8_000_000, ResumeOffset: 10 * time.Minute},
+		Tier: core.TierNextUp,
+	}}
+	p.Run(context.Background(), targets, 1<<40)
+	if len(cache.warmed) == 0 {
+		t.Fatal("expected at least one Warm call")
+	}
+	if cache.warmed[0].offset != 0 {
+		t.Errorf("warm offset = %d, want 0 (resume offset must not apply to non-resume tier)", cache.warmed[0].offset)
+	}
+}
+
+func TestRunWarmErrorNotCountedPreloaded(t *testing.T) {
+	cache := &fakeCache{resident: -1, warmErr: io.ErrUnexpectedEOF}
+	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	targets := []core.PreloadTarget{{
+		Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 25_000_000},
+		Tier: core.TierNextUp,
+	}}
+	stats := p.Run(context.Background(), targets, 1<<40)
+	if stats.Preloaded != 0 {
+		t.Errorf("Preloaded = %d, want 0 when Warm returns an error", stats.Preloaded)
 	}
 }

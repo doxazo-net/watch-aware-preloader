@@ -99,23 +99,27 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 		}
 
 		head := HeadBytes(p.cfg, t.Item)
-		offset := resumeOffsetBytes(t.Item)
+		offset := int64(0)
+		if t.Tier == core.TierResume {
+			offset = resumeOffsetBytes(t.Item)
+		}
 		if offset >= size {
 			offset = 0
 		}
 		if offset+head > size {
 			head = size - offset
 		}
-		cost := head + p.cfg.TailBytes
-		if used+cost > budgetBytes {
-			break // budget exhausted; remaining lower-priority targets dropped
-		}
 
-		// Skip ranges already fully resident.
+		// Skip ranges already fully resident (costs no budget).
 		if resident, known, rerr := p.cache.Resident(hostPath, offset, head); rerr == nil && known && resident >= head {
 			stats.Skipped++
 			stats.ByTier[t.Tier]++
 			continue
+		}
+
+		cost := head + p.cfg.TailBytes
+		if used+cost > budgetBytes {
+			break // budget exhausted; remaining lower-priority targets dropped
 		}
 
 		if err := p.cache.Warm(hostPath, offset, head); err != nil {
@@ -124,7 +128,7 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 			continue
 		}
 		if p.cfg.TailBytes > 0 && size > p.cfg.TailBytes {
-			_ = p.cache.Warm(hostPath, size-p.cfg.TailBytes, p.cfg.TailBytes)
+			_ = p.cache.Warm(hostPath, size-p.cfg.TailBytes, p.cfg.TailBytes) // best-effort: tail (e.g. MP4 moov) warm failure is non-fatal
 		}
 		used += cost
 		stats.Preloaded++
