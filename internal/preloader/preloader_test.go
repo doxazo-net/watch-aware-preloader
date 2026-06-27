@@ -1,0 +1,111 @@
+package preloader
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	"github.com/sydlexius/watch-aware-preloader/internal/core"
+	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
+)
+
+// fakeCache records Warm calls and reports nothing resident.
+type fakeCache struct {
+	warmed   []warmCall
+	resident int64
+}
+type warmCall struct {
+	path           string
+	offset, length int64
+}
+
+func (f *fakeCache) Warm(path string, offset, length int64) error {
+	f.warmed = append(f.warmed, warmCall{path, offset, length})
+	return nil
+}
+func (f *fakeCache) Resident(_ string, _, length int64) (int64, bool, error) {
+	if f.resident < 0 {
+		return 0, false, nil // residency unknown
+	}
+	return f.resident, true, nil
+}
+
+type fakeFS map[string]int64 // path -> size
+
+func (m fakeFS) Stat(path string) (int64, error) {
+	sz, ok := m[path]
+	if !ok {
+		return 0, io.EOF // stand-in for "not found"
+	}
+	return sz, nil
+}
+
+func testCfg() Config {
+	return Config{TargetSeconds: 20, MinHeadBytes: 8 << 20, MaxHeadBytes: 250 << 20, TailBytes: 1 << 20}
+}
+
+func TestHeadBytesDurationBased(t *testing.T) {
+	// 25 Mbps over 20s = 25e6/8*20 = 62.5 MB, within clamp.
+	it := core.MediaItem{BitrateBps: 25_000_000}
+	got := HeadBytes(testCfg(), it)
+	want := int64(20) * 25_000_000 / 8
+	if got != want {
+		t.Errorf("HeadBytes = %d, want %d", got, want)
+	}
+}
+
+func TestHeadBytesClampsLow(t *testing.T) {
+	it := core.MediaItem{BitrateBps: 1_000_000} // 20s = 2.5MB < 8MB floor
+	if got := HeadBytes(testCfg(), it); got != 8<<20 {
+		t.Errorf("HeadBytes = %d, want floor 8MiB", got)
+	}
+}
+
+func TestHeadBytesFallbackToSizeOverRuntime(t *testing.T) {
+	it := core.MediaItem{SizeBytes: 600 << 20, Runtime: 45 * time.Minute} // ~bitrate
+	got := HeadBytes(testCfg(), it)
+	if got <= 0 {
+		t.Fatal("expected positive head bytes from size/runtime fallback")
+	}
+}
+
+func TestRunSkipsMissingAndBudgets(t *testing.T) {
+	cache := &fakeCache{resident: -1} // unknown residency => always warm
+	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	targets := []core.PreloadTarget{
+		{Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 25_000_000}, Tier: core.TierNextUp},
+		{Item: core.MediaItem{ID: "missing", ServerPath: "/mnt/user/TV/none.mkv", BitrateBps: 25_000_000}, Tier: core.TierNextUp},
+	}
+	// Budget only fits one head + tail.
+	budget := HeadBytes(testCfg(), targets[0].Item) + testCfg().TailBytes + 1
+	stats := p.Run(context.Background(), targets, budget)
+
+	if stats.Preloaded != 1 {
+		t.Errorf("Preloaded = %d, want 1", stats.Preloaded)
+	}
+	if stats.Missing != 1 {
+		t.Errorf("Missing = %d, want 1", stats.Missing)
+	}
+	if len(cache.warmed) == 0 || cache.warmed[0].path != "/mnt/user/TV/a.mkv" {
+		t.Errorf("expected warm of a.mkv, got %+v", cache.warmed)
+	}
+}
+
+func TestRunResumeUsesOffset(t *testing.T) {
+	cache := &fakeCache{resident: -1}
+	fs := fakeFS{"/mnt/user/TV/a.mkv": 5 << 30}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	targets := []core.PreloadTarget{{
+		Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 8_000_000, ResumeOffset: 10 * time.Minute},
+		Tier: core.TierResume,
+	}}
+	p.Run(context.Background(), targets, 1<<40)
+	// offset = 600s * 8e6/8 = 600 * 1e6 = 600_000_000 bytes
+	if cache.warmed[0].offset != 600_000_000 {
+		t.Errorf("resume offset = %d, want 600000000", cache.warmed[0].offset)
+	}
+}
