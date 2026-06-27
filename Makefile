@@ -67,6 +67,18 @@ php-lint: ## Static analysis (PHPStan) + style check (PHP-CS-Fixer, dry-run)
 php-fix: ## Auto-fix PHP style (PHP-CS-Fixer)
 	vendor/bin/php-cs-fixer fix
 
+## ----- Hooks -----
+
+.PHONY: hooks
+hooks: ## Install git hooks (sets core.hooksPath + chmod +x)
+	git config core.hooksPath .githooks
+	chmod +x .githooks/* scripts/*.sh
+	@echo "Hooks installed. Run 'make doctor' to verify."
+
+.PHONY: doctor
+doctor: ## Verify git hook wiring is correct
+	bash scripts/check-hooks.sh
+
 ## ----- Meta -----
 
 .PHONY: tools

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook: fast checks on the whole module.
+#
+# Checks (in order, fast-fail):
+#   1. gofmt  -- whole module is correctly formatted
+#   2. go vet -- static analysis
+#
+# Skip with: git commit --no-verify (use sparingly)
+
+set -euo pipefail
+
+# Colors (disabled if not a terminal)
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED='' GREEN='' BOLD='' RESET=''
+fi
+
+fail() { echo -e "${RED}${BOLD}FAIL${RESET} $1" >&2; exit 1; }
+pass() { echo -e "${GREEN}PASS${RESET} $1"; }
+
+# --------------------------------------------------------------------------
+# 1. gofmt
+# --------------------------------------------------------------------------
+UNFORMATTED=$(gofmt -l . 2>/dev/null || true)
+if [ -n "$UNFORMATTED" ]; then
+    echo -e "${RED}${BOLD}FAIL${RESET} gofmt: the following files need formatting:"
+    echo "$UNFORMATTED" | sed 's/^/  /'
+    echo ""
+    echo "Run: gofmt -w . && git add -p"
+    exit 1
+fi
+pass "gofmt"
+
+# --------------------------------------------------------------------------
+# 2. go vet
+# --------------------------------------------------------------------------
+if ! go vet ./... 2>/tmp/pre-commit-vet.log; then
+    fail "go vet (see output above):"
+    cat /tmp/pre-commit-vet.log >&2
+    exit 1
+fi
+pass "go vet"
+
+echo ""
+echo -e "${GREEN}${BOLD}All pre-commit checks passed.${RESET}"
