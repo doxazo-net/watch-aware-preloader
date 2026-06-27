@@ -1,17 +1,33 @@
-# watch-aware-preloader - Claude Code Project Instructions
+# Watch-Aware Preloader - Claude Code Project Instructions
+
+## >> ON SESSION START / RESUME: read SESSION-STATE.md FIRST <<
+
+`SESSION-STATE.md` (repo root; local-only, git-excluded) is the running checkpoint -
+current status, the immediate next action, and gotchas. Read it before doing anything
+when asked to "resume" or "pick up where we left off".
+
+Plugin display name: **Watch-Aware Preloader**. Binary: `preloadd`. Repo/Go-module
+slug stays kebab-case `watch-aware-preloader`.
 
 ## Project Overview
 
 An Unraid plugin that warms the Linux page cache with the media each household
 user is most likely to play next, so playback starts instantly instead of waiting
-8-10 seconds for an array disk to spin up. Unlike the popular "Video Preloader"
-script (which guesses from filesystem mtime), this derives intent from the media
+8-10 seconds for an array disk to spin up. Unlike the popular [Video Preloader](https://forums.unraid.net/topic/97982-video-preloader-avoids-hdd-spinup-latency-when-starting-a-movie-or-episode-through-plex-jellyfin-or-emby/)
+script by Marc Gutt (which guesses from filesystem mtime), this derives intent from the media
 server's own watch state (Emby/Jellyfin): resume points, next-up episodes,
 recently-added, and what each user has been watching.
 
 The approved design is in [`docs/specs/2026-06-26-watch-aware-preloader-design.md`](docs/specs/2026-06-26-watch-aware-preloader-design.md).
 Read it before implementing. Phase 1 (Go engine MVP, Emby, file config) is the
 first deliverable.
+
+**Run model: cron-invoked one-shot is primary** (like Fix Common Problems / Mover),
+not a resident service. `preloadd -once` (also the default) does one full sweep and
+exits; cron re-invokes it each interval to pick up library changes. `--daemon` is an
+optional resident loop (periodic sweep + `/Sessions` poll) for sub-interval reaction;
+`-verify` runs one sweep then reports page-cache residency. `cmd/preloadd` chose this
+over a supervised service to avoid init-script/restart/update complexity.
 
 ## Style and Conventions
 
@@ -28,7 +44,7 @@ first deliverable.
 Five decoupled units inside the `preloadd` binary:
 
 ```
-cmd/preloadd/        - daemon entry point
+cmd/preloadd/        - entry point + run modes (-once default, --daemon, -verify)
 internal/mediaserver/ - WatchProvider interface + Emby/Jellyfin adapters
                         (auth, fetch Resume/NextUp/Latest/Sessions, subscribe)
 internal/scorer/      - pure: per-user signals -> ranked, deduped []PreloadTarget

@@ -19,3 +19,7 @@ config.toml
 .DS_Store
 .idea/
 .vscode/
+
+# SDD scratch
+.superpowers/
+/preloadd

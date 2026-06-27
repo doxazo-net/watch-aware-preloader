@@ -1,0 +1,109 @@
+package app
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	"github.com/sydlexius/watch-aware-preloader/internal/config"
+	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
+	"github.com/sydlexius/watch-aware-preloader/internal/scorer"
+	"github.com/sydlexius/watch-aware-preloader/internal/sysinfo"
+)
+
+// RunOnce performs one full pipeline pass: collect, rank, preload.
+func RunOnce(ctx context.Context, p Provider, enabled []string, pre *preloader.Preloader, budget int64, log *slog.Logger) (preloader.RunStats, error) {
+	cands, playing, err := CollectCandidates(ctx, p, enabled)
+	if err != nil {
+		return preloader.RunStats{}, err
+	}
+	targets := scorer.Rank(cands, playing)
+	stats := pre.Run(ctx, targets, budget)
+	log.Info("sweep complete",
+		"targets", len(targets), "preloaded", stats.Preloaded,
+		"skipped", stats.Skipped, "missing", stats.Missing,
+		"bytes_warmed", stats.BytesWarmed, "by_tier", stats.ByTier)
+	return stats, nil
+}
+
+// Daemon runs the periodic sweep and the session-triggered sweep.
+type Daemon struct {
+	cfg *config.Config
+	p   Provider
+	pre *preloader.Preloader
+	log *slog.Logger
+}
+
+// NewDaemon wires the runtime loop.
+func NewDaemon(cfg *config.Config, p Provider, pre *preloader.Preloader, log *slog.Logger) *Daemon {
+	return &Daemon{cfg: cfg, p: p, pre: pre, log: log}
+}
+
+// Budget returns the current preload byte budget.
+func (d *Daemon) Budget() int64 { return d.budget() }
+
+func (d *Daemon) budget() int64 {
+	avail, err := sysinfo.AvailableBytes()
+	if err != nil {
+		d.log.Warn("reading available RAM failed; using 0 budget", "err", err)
+		return 0
+	}
+	return sysinfo.BudgetBytes(avail, d.cfg.Preload.RAMPercent)
+}
+
+func (d *Daemon) sweep(ctx context.Context) {
+	if _, err := RunOnce(ctx, d.p, d.cfg.Users.Enabled, d.pre, d.budget(), d.log); err != nil {
+		d.log.Error("sweep failed", "err", err)
+	}
+}
+
+// Loop runs until ctx is canceled. A full sweep fires on the sweep interval;
+// a fast session poll fires an extra sweep whenever the now-playing set changes
+// (giving event-like latency without a websocket).
+func (d *Daemon) Loop(ctx context.Context) error {
+	d.sweep(ctx) // warm immediately on start
+
+	sweepTick := time.NewTicker(time.Duration(d.cfg.Schedule.SweepSeconds) * time.Second)
+	defer sweepTick.Stop()
+	pollTick := time.NewTicker(time.Duration(d.cfg.Schedule.SessionPollSeconds) * time.Second)
+	defer pollTick.Stop()
+
+	var lastPlaying string
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-sweepTick.C:
+			d.sweep(ctx)
+		case <-pollTick.C:
+			ids, err := d.p.NowPlayingIDs(ctx)
+			if err != nil {
+				d.log.Warn("session poll failed", "err", err)
+				continue
+			}
+			if sig := playingSignature(ids); sig != lastPlaying {
+				lastPlaying = sig
+				d.log.Info("playback state changed; triggering sweep")
+				d.sweep(ctx)
+			}
+		}
+	}
+}
+
+func playingSignature(ids map[string]bool) string {
+	keys := make([]string, 0, len(ids))
+	for k := range ids {
+		keys = append(keys, k)
+	}
+	// Deterministic signature independent of map order.
+	for i := 1; i < len(keys); i++ {
+		for j := i; j > 0 && keys[j] < keys[j-1]; j-- {
+			keys[j], keys[j-1] = keys[j-1], keys[j]
+		}
+	}
+	out := ""
+	for _, k := range keys {
+		out += k + ","
+	}
+	return out
+}

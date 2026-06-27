@@ -1,0 +1,31 @@
+# preloadd configuration. Copy to config.toml and fill in your values.
+# config.toml is gitignored because api_key is a secret.
+
+[server]
+type = "emby"
+url = "http://192.168.1.126:8096"
+api_key = "PUT-YOUR-EMBY-API-KEY-HERE"
+
+[users]
+# User names to preload for. Leave empty to include all users.
+enabled = []
+
+[preload]
+ram_percent = 50      # share of available RAM used as the preload budget
+target_seconds = 20   # seconds of playback to keep warm (covers disk spin-up)
+min_head_mb = 8
+max_head_mb = 250
+tail_mb = 1
+
+# Map media-server paths to host paths. Omit if the server reports host paths.
+[[path_map]]
+from = "/share"
+to = "/mnt/user"
+
+[schedule]
+# NOTE: sweep_seconds and session_poll_seconds apply ONLY in --daemon mode.
+# In the default/cron one-shot mode (the default, or explicit -once), scheduling
+# is controlled by the cron interval that invokes `preloadd` (or `preloadd -once`);
+# these values are ignored.
+sweep_seconds = 60          # full re-evaluation interval (daemon mode only)
+session_poll_seconds = 5    # how often to poll /Sessions for live changes (daemon mode only)

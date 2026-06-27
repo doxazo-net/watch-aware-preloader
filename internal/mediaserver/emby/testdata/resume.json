@@ -1,0 +1,13 @@
+{
+  "Items": [
+    {
+      "Id": "item1",
+      "Name": "Slow Horses S05E01",
+      "RunTimeTicks": 27063290000,
+      "UserData": { "PlaybackPositionTicks": 6000000000 },
+      "MediaSources": [
+        { "Path": "/share/TV_Shows/Slow Horses/s05e01.mkv", "Bitrate": 25000000, "Size": 8471453856 }
+      ]
+    }
+  ]
+}
