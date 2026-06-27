@@ -1,11 +1,14 @@
-# watch-aware-preloader - Claude Code Project Instructions
+# Watch-Aware Preloader - Claude Code Project Instructions
+
+Plugin display name: **Watch-Aware Preloader**. Binary: `preloadd`. Repo/Go-module
+slug stays kebab-case `watch-aware-preloader`.
 
 ## Project Overview
 
 An Unraid plugin that warms the Linux page cache with the media each household
 user is most likely to play next, so playback starts instantly instead of waiting
-8-10 seconds for an array disk to spin up. Unlike the popular "Video Preloader"
-script (which guesses from filesystem mtime), this derives intent from the media
+8-10 seconds for an array disk to spin up. Unlike the popular [Video Preloader](https://forums.unraid.net/topic/97982-video-preloader-avoids-hdd-spinup-latency-when-starting-a-movie-or-episode-through-plex-jellyfin-or-emby/)
+script by Marc Gutt (which guesses from filesystem mtime), this derives intent from the media
 server's own watch state (Emby/Jellyfin): resume points, next-up episodes,
 recently-added, and what each user has been watching.
 

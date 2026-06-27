@@ -2,14 +2,18 @@
 
 Date: 2026-06-26
 Status: Approved design, ready for Phase 1 implementation plan
-Working name: `preloadd` (daemon), plugin `watch-aware-preloader`
+Plugin name: **Watch-Aware Preloader** (binary `preloadd`; repo/module slug
+`watch-aware-preloader`).
 
 ## 1. Problem
 
 Unraid array disks spin down to save power and noise. On playback start there is
-an 8-10 second stall while the disk spins up. The popular workaround (Marc Gutt's
-"Video Preloader" bash script) reads the first ~60 MB of recently-*modified* video
-files into the Linux page cache so playback starts from RAM instead of a cold disk.
+an 8-10 second stall while the disk spins up. The popular workaround ([Marc Gutt's
+"Video Preloader"][vp] bash script) reads the first ~60 MB of recently-*modified*
+video files into the Linux page cache so playback starts from RAM instead of a cold
+disk.
+
+[vp]: https://forums.unraid.net/topic/97982-video-preloader-avoids-hdd-spinup-latency-when-starting-a-movie-or-episode-through-plex-jellyfin-or-emby/
 
 Its core weakness: it uses filesystem modification time as a proxy for "what will I
 watch next." That proxy is poor. The media server (Emby/Jellyfin) already knows the

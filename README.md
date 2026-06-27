@@ -1,11 +1,11 @@
-# watch-aware-preloader
+# Watch-Aware Preloader
 
 An Unraid plugin that preloads the media you are actually likely to play next into
 the Linux page cache, so playback starts instantly instead of waiting 8-10 seconds
 for an array disk to spin up.
 
-Unlike the popular "Video Preloader" script (which guesses from filesystem
-modification time), this uses your media server's own watch state - resume points,
+Unlike the popular [Video Preloader][vp] script by Marc Gutt (which guesses from
+filesystem modification time), this uses your media server's own watch state - resume points,
 next-up episodes, recently-added, and what each household user has been watching - to
 decide what to warm, and sizes each preload by playback *duration* rather than a fixed
 byte count.
@@ -16,6 +16,8 @@ byte count.
 - Runs as a **cron-invoked one-shot** (`preloadd -once`) like Fix Common Problems and
   the Mover - each run is a fresh sweep, so library changes are picked up every
   interval. An optional `--daemon` mode adds sub-minute reaction for those who want it.
+
+[vp]: https://forums.unraid.net/topic/97982-video-preloader-avoids-hdd-spinup-latency-when-starting-a-movie-or-episode-through-plex-jellyfin-or-emby/
 
 ## Status
 
