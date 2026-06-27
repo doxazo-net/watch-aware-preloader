@@ -49,14 +49,16 @@ func (m *Mapper) ToHost(serverPath string) (string, bool) {
 	if len(m.rules) == 0 {
 		return serverPath, true
 	}
-	// Match against the same canonical form the rules were normalized into, so a
-	// Windows/UNC server path (`\\host\Share\...`) resolves via the existing
-	// longest-prefix logic. Done after the empty-rules pass-through so that case
-	// still returns the original path untouched.
-	serverPath = strings.ReplaceAll(serverPath, `\`, "/")
+	// Canonicalize only Windows/UNC inputs (leading `\\`) so they resolve via the
+	// existing longest-prefix logic. On POSIX a backslash is a legal filename
+	// character, so a non-UNC path is matched verbatim and never rewritten.
+	canonical := serverPath
+	if strings.HasPrefix(serverPath, `\\`) {
+		canonical = strings.ReplaceAll(serverPath, `\`, "/")
+	}
 	for _, r := range m.rules {
-		if serverPath == r.From || strings.HasPrefix(serverPath, r.From+"/") {
-			return r.To + strings.TrimPrefix(serverPath, r.From), true
+		if canonical == r.From || strings.HasPrefix(canonical, r.From+"/") {
+			return r.To + strings.TrimPrefix(canonical, r.From), true
 		}
 	}
 	return "", false
