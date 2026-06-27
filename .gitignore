@@ -22,3 +22,4 @@ config.toml
 
 # SDD scratch
 .superpowers/
+/preloadd
