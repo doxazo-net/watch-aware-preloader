@@ -24,6 +24,13 @@ func TestToHostNoMatch(t *testing.T) {
 	}
 }
 
+func TestToHostNoMidSegmentMatch(t *testing.T) {
+	m := New([]Rule{{From: "/share", To: "/mnt/user"}})
+	if got, ok := m.ToHost("/shareXYZ/movie.mkv"); ok {
+		t.Errorf("expected no match for mid-segment prefix, got %q", got)
+	}
+}
+
 func TestToHostEmptyRulesPassThrough(t *testing.T) {
 	// With no rules, server path is assumed already host-correct.
 	m := New(nil)

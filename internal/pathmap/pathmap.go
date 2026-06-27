@@ -39,9 +39,6 @@ func (m *Mapper) ToHost(serverPath string) (string, bool) {
 		if serverPath == r.From || strings.HasPrefix(serverPath, r.From+"/") {
 			return r.To + strings.TrimPrefix(serverPath, r.From), true
 		}
-		if strings.HasPrefix(serverPath, r.From) {
-			return r.To + strings.TrimPrefix(serverPath, r.From), true
-		}
 	}
 	return "", false
 }
