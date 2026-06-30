@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -40,13 +41,21 @@ type ScheduleConfig struct {
 	SessionPollSeconds int `toml:"session_poll_seconds"`
 }
 
+// ResidencyConfig controls the read-timing probe used to detect page-cache
+// residency on filesystems where mincore cannot (e.g. Unraid fuse.shfs).
+type ResidencyConfig struct {
+	ProbeBytes     int64         `toml:"probe_bytes"`     // fixed probe sample size
+	ProbeThreshold time.Duration `toml:"probe_threshold"` // cached iff a probe read returns faster than this
+}
+
 // Config is the full preloadd configuration.
 type Config struct {
-	Server   ServerConfig   `toml:"server"`
-	Users    UsersConfig    `toml:"users"`
-	Preload  PreloadConfig  `toml:"preload"`
-	PathMap  []PathRule     `toml:"path_map"`
-	Schedule ScheduleConfig `toml:"schedule"`
+	Server    ServerConfig    `toml:"server"`
+	Users     UsersConfig     `toml:"users"`
+	Preload   PreloadConfig   `toml:"preload"`
+	PathMap   []PathRule      `toml:"path_map"`
+	Schedule  ScheduleConfig  `toml:"schedule"`
+	Residency ResidencyConfig `toml:"residency"`
 }
 
 // Load decodes a TOML config file, applies defaults, and validates it.
@@ -84,6 +93,12 @@ func (c *Config) applyDefaults() {
 	if c.Schedule.SessionPollSeconds == 0 {
 		c.Schedule.SessionPollSeconds = 5
 	}
+	if c.Residency.ProbeBytes == 0 {
+		c.Residency.ProbeBytes = 1 << 20
+	}
+	if c.Residency.ProbeThreshold == 0 {
+		c.Residency.ProbeThreshold = 150 * time.Millisecond
+	}
 }
 
 // Validate checks required fields and ranges.
@@ -115,6 +130,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Schedule.SessionPollSeconds < 1 {
 		return fmt.Errorf("schedule.session_poll_seconds must be >= 1")
+	}
+	if c.Residency.ProbeBytes <= 0 {
+		return fmt.Errorf("residency.probe_bytes must be > 0, got %d", c.Residency.ProbeBytes)
+	}
+	if c.Residency.ProbeThreshold <= 0 {
+		return fmt.Errorf("residency.probe_threshold must be > 0, got %v", c.Residency.ProbeThreshold)
 	}
 	return nil
 }

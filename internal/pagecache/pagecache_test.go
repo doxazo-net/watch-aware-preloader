@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestWarmReadsRange(t *testing.T) {
@@ -16,7 +17,7 @@ func TestWarmReadsRange(t *testing.T) {
 	if err := os.WriteFile(p, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c := New()
+	c := New(1<<20, 150*time.Millisecond, nil)
 	if err := c.Warm(p, 0, 4096); err != nil {
 		t.Fatalf("Warm: %v", err)
 	}
@@ -27,7 +28,7 @@ func TestWarmReadsRange(t *testing.T) {
 }
 
 func TestWarmMissingFile(t *testing.T) {
-	c := New()
+	c := New(1<<20, 150*time.Millisecond, nil)
 	if err := c.Warm("/no/such/file", 0, 10); err == nil {
 		t.Error("expected error warming a missing file")
 	}

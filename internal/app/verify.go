@@ -35,7 +35,11 @@ func ReportResidency(cache pagecache.Cache, warmed []preloader.WarmedRange, log 
 		if !known {
 			continue
 		}
-		log.Info("residency", "path", r.Path, "percent", pct)
+		method := "mincore"
+		if m, ok := cache.(pagecache.Methoder); ok {
+			method = m.Method(r.Path)
+		}
+		log.Info("residency", "path", r.Path, "percent", pct, "method", method)
 		sum += pct
 		n++
 	}

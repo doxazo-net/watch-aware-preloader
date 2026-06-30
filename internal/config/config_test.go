@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 const sample = `
@@ -70,6 +71,8 @@ func validBase() *Config {
 	c.Preload.TargetSeconds = 20
 	c.Schedule.SweepSeconds = 60
 	c.Schedule.SessionPollSeconds = 5
+	c.Residency.ProbeBytes = 1 << 20
+	c.Residency.ProbeThreshold = 150 * time.Millisecond
 	return c
 }
 
@@ -114,6 +117,63 @@ func TestValidateRejectsNonPositiveIntervals(t *testing.T) {
 			tc.mut(c)
 			if err := c.Validate(); err == nil {
 				t.Errorf("expected error for non-positive %s (panics time.NewTicker)", tc.name)
+			}
+		})
+	}
+}
+
+func TestResidencyDefaults(t *testing.T) {
+	c := &Config{}
+	c.applyDefaults()
+	if c.Residency.ProbeBytes != 1<<20 {
+		t.Errorf("ProbeBytes default = %d, want %d", c.Residency.ProbeBytes, 1<<20)
+	}
+	if c.Residency.ProbeThreshold != 150*time.Millisecond {
+		t.Errorf("ProbeThreshold default = %v, want 150ms", c.Residency.ProbeThreshold)
+	}
+}
+
+func TestResidencyDecodesDurationString(t *testing.T) {
+	const data = `
+[server]
+type = "emby"
+url = "http://localhost:8096"
+api_key = "x"
+
+[residency]
+probe_bytes = 2097152
+probe_threshold = "200ms"
+`
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Residency.ProbeBytes != 2<<20 {
+		t.Errorf("ProbeBytes = %d, want %d", c.Residency.ProbeBytes, 2<<20)
+	}
+	if c.Residency.ProbeThreshold != 200*time.Millisecond {
+		t.Errorf("ProbeThreshold = %v, want 200ms", c.Residency.ProbeThreshold)
+	}
+}
+
+func TestResidencyRejectsNonPositive(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mut  func(*Config)
+	}{
+		{"probe_bytes <= 0", func(c *Config) { c.Residency.ProbeBytes = -1 }},
+		{"probe_threshold <= 0", func(c *Config) { c.Residency.ProbeThreshold = -1 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validBase()
+			tc.mut(c)
+			if err := c.Validate(); err == nil {
+				t.Errorf("expected validation error for %s", tc.name)
 			}
 		})
 	}
