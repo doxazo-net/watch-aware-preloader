@@ -26,6 +26,14 @@ var (
 )
 
 // probePath opens path, seeks to offset, and times a read of up to n bytes.
+//
+// The read intentionally has no deadline: its wall-clock duration IS the
+// residency signal, and a cold read on a spun-down array disk legitimately
+// blocks for the spin-up window (seconds), so any short timeout would abort
+// real cold reads. A genuinely wedged fuse.shfs mount would therefore stall the
+// sweep; that is an accepted limitation (a wedged user-share is a host-level
+// failure, and Go cannot cancel a blocking read on a regular file). A possible
+// generous bounded probe is tracked in issue #17.
 func (c *osCache) probePath(path string, offset, n int64) (time.Duration, error) {
 	f, err := os.Open(path) //nolint:gosec // operator-configured media path
 	if err != nil {
@@ -90,7 +98,9 @@ func residentImpl(c *osCache, path string, offset, length int64) (int64, bool, e
 	}
 	fuse, err := c.isFUSE(path)
 	if err != nil {
-		return 0, false, err
+		// statfs failed; fall back to mincore (the default attempt, matching
+		// residencyMethod's "mincore" label) rather than erroring out.
+		return residentByMincore(path, offset, length)
 	}
 	if fuse {
 		return c.residentByTiming(path, offset, length)

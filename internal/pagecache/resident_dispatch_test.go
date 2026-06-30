@@ -3,6 +3,7 @@
 package pagecache
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -95,6 +96,22 @@ func TestResidentByTimingRejectsNonPositiveProbeBytes(t *testing.T) {
 	}
 	if resident == 1<<20 {
 		t.Errorf("Resident: resident = %d, must not equal the full requested length (would be reported as falsely fully cached)", resident)
+	}
+}
+
+func TestResidentStatfsErrorFallsBackToMincore(t *testing.T) {
+	p := writeFile(t, t.TempDir(), 1<<20)
+	c := newTestCache(t, true /*fuse*/, 2*time.Millisecond)
+	c.statfs = func(string) (uint32, error) { return 0, errors.New("statfs boom") }
+
+	// On statfs failure, residentImpl must fall back to mincore (known result),
+	// not error out -- otherwise residencyMethod's "mincore" label would lie.
+	_, known, err := c.Resident(p, 0, 4096)
+	if err != nil {
+		t.Fatalf("Resident on statfs error: want mincore fallback, got err=%v", err)
+	}
+	if !known {
+		t.Errorf("known = false, want true (mincore fallback determines residency)")
 	}
 }
 

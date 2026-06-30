@@ -13,7 +13,13 @@ import (
 func timedRead(r io.Reader, n int64, now func() time.Time) (time.Duration, error) {
 	start := now()
 	const chunk = 64 << 10 // 64 KiB
-	buf := make([]byte, chunk)
+	// Size the buffer to the smaller of n and the chunk cap so a small probe
+	// (e.g. a tiny configured probe_bytes) doesn't allocate a full 64 KiB.
+	bufSize := int64(chunk)
+	if n < bufSize {
+		bufSize = n
+	}
+	buf := make([]byte, bufSize)
 	var read int64
 	for read < n {
 		want := n - read
