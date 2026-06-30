@@ -116,6 +116,15 @@ vmtouch -v "/mnt/user/<one warmed file>"   # should show a high resident %
 - [ ] Second pass shows `skipped` > 0 for the items warmed in step 2: **TODO**
 - [ ] `vmtouch` confirms resident pages on a sampled file: **TODO %**
 
+### FUSE residency (/mnt/user)
+
+On `fuse.shfs`, `mincore` is blind, so `preloadd` falls back to a read-timing
+probe (configurable via `[residency] probe_bytes` / `probe_threshold`). On FUSE,
+per-file residency is all-or-nothing: `100%` (probe served from RAM, fast) or
+`0%` (probe touched disk, slow), and the per-range log shows `method=timing`.
+A second `-verify` pass after a warm should report the warmed items cached
+(`skipped > 0`), confirming the warm landed in the shared page cache.
+
 ### 4. Measured start-time (spun-down disk, TTFF OFF vs ON)
 
 Measure time-to-first-frame for a title on an array disk that has spun down.
