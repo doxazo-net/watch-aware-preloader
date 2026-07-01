@@ -1,25 +1,132 @@
 name: Release Unraid Plugin
 
+# Cut a release by pushing a letter-free version tag (Slackware requires no
+# letters in the version):
+#   YYYY.MM.DD     -> stable release
+#   YYYY.MM.DD.N   -> prerelease build (for install-testing)
+#
+# The job builds the noarch .txz, renders the .plg from plugin/plugin.j2, and
+# publishes them as release assets. It creates the release as a DRAFT, uploads
+# the assets, then publishes - the only asset-upload order compatible with this
+# repo's immutable releases (a published release is frozen and rejects late
+# uploads). Nothing is committed to main: the install URL is the stable
+# releases/latest/download/watch-aware-preloader.plg asset, so no protected-
+# branch push is needed.
+
 on:
-  release:
-    types:
-      - prereleased
-      - released
+  push:
+    tags:
+      - '[0-9]*'
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.release.id }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build:
+  release:
+    name: Build and publish release
     runs-on: ubuntu-latest
     permissions:
-      contents: write # attach release assets + commit the generated .plg
+      contents: write # create the release and upload assets
     steps:
-      - uses: dkaser/unraid-plugin-release-action@946d02c81dd87c252e5a06d18f3e74b2ecc401dc # v1.5.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          go_dir: .
-          build_script: ./plugin/build.sh
-          build_prereleases: "true"
-          changelog_releases: "5"
+          persist-credentials: false
+          fetch-depth: 0 # tag message + git describe for the changelog/version
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build the preloadd binary into the plugin tree
+        env:
+          PLUGIN_VERSION: ${{ github.ref_name }}
+        run: ./plugin/build.sh
+
+      - name: Package the noarch .txz and checksum
+        id: pkg
+        env:
+          PLUGIN_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          txz="watch-aware-preloader-${PLUGIN_VERSION}-noarch-1.txz"
+          ( cd src && tar --owner=0 --group=0 -cJf "${GITHUB_WORKSPACE}/release/${txz}" ./* )
+          checksum="$(cd release && sha256sum "${txz}" | awk '{print $1}')"
+          printf '%s' "${checksum}" > "release/${txz}.sha256"
+          {
+            echo "txz=${txz}"
+            echo "checksum=${checksum}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Render the .plg from the Jinja template
+        env:
+          PLUGIN_VERSION: ${{ github.ref_name }}
+          PLUGIN_CHECKSUM: ${{ steps.pkg.outputs.checksum }}
+        run: |
+          set -euo pipefail
+          changelog="$(git tag -l --format='%(contents)' "${PLUGIN_VERSION}")"
+          if [ -z "${changelog}" ]; then
+            changelog="Release ${PLUGIN_VERSION}"
+          fi
+          export PLUGIN_CHANGELOG="${changelog}"
+          # Use a venv so the render never trips PEP 668 externally-managed-env.
+          # Pin jinja2 to a vetted version for a reproducible, supply-chain-safe
+          # build (3.1.6 carries the CVE-2024-56326/56201 fixes).
+          python3 -m venv /tmp/rendervenv
+          /tmp/rendervenv/bin/pip install --quiet 'jinja2==3.1.6'
+          /tmp/rendervenv/bin/python - <<'PY'
+          import os
+          import jinja2
+
+          with open('plugin/plugin.j2', encoding='utf-8') as fh:
+              template = fh.read()
+          rendered = jinja2.Environment(
+              undefined=jinja2.StrictUndefined,
+              autoescape=False,
+          ).from_string(template).render(env=os.environ)
+          with open('release/watch-aware-preloader.plg', 'w', encoding='utf-8') as fh:
+              fh.write(rendered)
+          PY
+          echo "Rendered .plg:"
+          sed -n '1,20p' release/watch-aware-preloader.plg
+          # Fail loudly if the render dropped the version or checksum, rather
+          # than publishing a .plg that points at the wrong (or no) package.
+          grep -qF "${PLUGIN_VERSION}" release/watch-aware-preloader.plg \
+            || { echo "render check failed: version missing from .plg" >&2; exit 1; }
+          grep -qF "${PLUGIN_CHECKSUM}" release/watch-aware-preloader.plg \
+            || { echo "render check failed: checksum missing from .plg" >&2; exit 1; }
+
+      - name: Create draft release, upload assets, then publish (immutable-safe)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUGIN_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Enforce a strictly numeric dotted version (3 or 4 segments) so a
+          # non-numeric tag (e.g. 2024.07.01-rc1) can never be misclassified as
+          # a stable release by the segment count below. Slackware also forbids
+          # letters in the version.
+          if ! printf '%s' "${PLUGIN_VERSION}" | grep -Eq '^[0-9]+(\.[0-9]+){2,3}$'; then
+            echo "Refusing: tag '${PLUGIN_VERSION}' is not a numeric dotted version (YYYY.MM.DD or YYYY.MM.DD.N)." >&2
+            exit 1
+          fi
+          segments="$(printf '%s' "${PLUGIN_VERSION}" | awk -F. '{print NF}')"
+          prerelease_flag=""
+          if [ "${segments}" -ge 4 ]; then
+            prerelease_flag="--prerelease"
+          fi
+          # Draft first so the assets attach while the release is still mutable;
+          # publishing the draft then freezes it with the assets in place.
+          gh release create "${PLUGIN_VERSION}" \
+            --draft \
+            ${prerelease_flag} \
+            --title "${PLUGIN_VERSION}" \
+            --notes "Automated release ${PLUGIN_VERSION}. Install or update from the stable URL: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/watch-aware-preloader.plg" \
+            "release/${{ steps.pkg.outputs.txz }}" \
+            "release/${{ steps.pkg.outputs.txz }}.sha256" \
+            "release/watch-aware-preloader.plg"
+          gh release edit "${PLUGIN_VERSION}" --draft=false
