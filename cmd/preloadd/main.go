@@ -17,6 +17,7 @@ import (
 	"github.com/sydlexius/watch-aware-preloader/internal/pagecache"
 	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
 	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
+	"github.com/sydlexius/watch-aware-preloader/internal/secrets"
 )
 
 var version = "dev"
@@ -67,7 +68,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	client, err := emby.New(cfg.Server.URL, cfg.Server.APIKey, nil)
+	apiKey, err := secrets.APIKey(cfg.SecretPath)
+	if err != nil {
+		log.Error("loading API key failed", "err", err)
+		os.Exit(1)
+	}
+
+	client, err := emby.New(cfg.Server.URL, apiKey, nil)
 	if err != nil {
 		log.Error("emby client init failed", "err", err)
 		os.Exit(1)

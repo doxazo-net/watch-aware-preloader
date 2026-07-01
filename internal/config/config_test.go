@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -11,7 +12,6 @@ const sample = `
 [server]
 type = "emby"
 url = "http://192.168.1.126:8096"
-api_key = "abc123"
 
 [users]
 enabled = ["jesse", "rachel"]
@@ -38,7 +38,7 @@ func TestLoadValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Server.URL != "http://192.168.1.126:8096" || c.Server.APIKey != "abc123" {
+	if c.Server.URL != "http://192.168.1.126:8096" {
 		t.Errorf("server parsed wrong: %+v", c.Server)
 	}
 	if c.Preload.RAMPercent != 50 || c.Preload.TargetSeconds != 20 {
@@ -53,7 +53,6 @@ func TestValidateRejectsBadPercent(t *testing.T) {
 	c := &Config{}
 	c.Server.Type = "emby"
 	c.Server.URL = "http://h:8096"
-	c.Server.APIKey = "k"
 	c.Preload.RAMPercent = 150
 	if err := c.Validate(); err == nil {
 		t.Error("expected error for ram_percent > 100")
@@ -66,7 +65,6 @@ func validBase() *Config {
 	c := &Config{}
 	c.Server.Type = "emby"
 	c.Server.URL = "http://h:8096"
-	c.Server.APIKey = "k"
 	c.Preload.RAMPercent = 50
 	c.Preload.TargetSeconds = 20
 	c.Schedule.SweepSeconds = 60
@@ -138,7 +136,6 @@ func TestResidencyDecodesDurationString(t *testing.T) {
 [server]
 type = "emby"
 url = "http://localhost:8096"
-api_key = "x"
 
 [residency]
 probe_bytes = 2097152
@@ -207,5 +204,49 @@ func TestStatusPathOverride(t *testing.T) {
 	}
 	if c.StatusPath != "/tmp/custom/status.json" {
 		t.Errorf("StatusPath = %q, want /tmp/custom/status.json", c.StatusPath)
+	}
+}
+
+func TestLoadRejectsAPIKeyInConfig(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	body := "[server]\ntype = \"emby\"\nurl = \"http://h:8096\"\napi_key = \"leaked\"\n"
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("expected error: api_key must not be in config.toml")
+	}
+	if !strings.Contains(err.Error(), "server.api_key must not be in config.toml") {
+		t.Errorf("error = %q, want it to mention server.api_key must not be in config.toml", err)
+	}
+}
+
+func TestSecretPathDefault(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(p, []byte(sample), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SecretPath != "/boot/config/plugins/watch-aware-preloader/secrets.toml" {
+		t.Errorf("SecretPath default = %q", c.SecretPath)
+	}
+}
+
+func TestSecretPathOverride(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	body := "secret_path = \"/tmp/x/secrets.toml\"\n" + sample
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SecretPath != "/tmp/x/secrets.toml" {
+		t.Errorf("SecretPath = %q, want /tmp/x/secrets.toml", c.SecretPath)
 	}
 }

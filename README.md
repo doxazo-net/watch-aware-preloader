@@ -26,6 +26,20 @@ Pre-implementation. The approved design lives in
 
 Phase 1 (engine MVP, Emby, config via file) is the first deliverable.
 
+## Configuration
+
+### Credentials
+
+The Emby API key is a secret and is kept out of `config.toml`. Provide it either:
+
+- in a secrets file (default `/boot/config/plugins/watch-aware-preloader/secrets.toml`,
+  mode `0600`) under `[server].api_key` - see `secrets.example.toml`; or
+- via the `EMBY_API_KEY` environment variable (which overrides the file).
+
+`config.toml` must not contain `api_key`; the engine refuses to start if it does.
+The secrets-file location can be overridden with the `secret_path` key in
+`config.toml`.
+
 ## License
 
 [MIT](LICENSE).

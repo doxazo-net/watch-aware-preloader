@@ -10,9 +10,8 @@ import (
 
 // ServerConfig holds the media-server connection parameters.
 type ServerConfig struct {
-	Type   string `toml:"type"` // "emby" (Phase 1)
-	URL    string `toml:"url"`
-	APIKey string `toml:"api_key"`
+	Type string `toml:"type"` // "emby" (Phase 1)
+	URL  string `toml:"url"`
 }
 
 // UsersConfig specifies which users to preload for.
@@ -57,15 +56,22 @@ type Config struct {
 	Schedule   ScheduleConfig  `toml:"schedule"`
 	Residency  ResidencyConfig `toml:"residency"`
 	StatusPath string          `toml:"status_path"` // where the engine writes status.json
+	SecretPath string          `toml:"secret_path"` // where the engine reads the secrets file
 }
 
 // Load decodes a TOML config file, applies defaults, and validates it.
 func Load(path string) (*Config, error) {
 	var c Config
-	if _, err := toml.DecodeFile(path, &c); err != nil {
+	md, err := toml.DecodeFile(path, &c)
+	if err != nil {
 		return nil, fmt.Errorf("decoding config: %w", err)
 	}
 	c.applyDefaults()
+	for _, key := range md.Undecoded() {
+		if key.String() == "server.api_key" {
+			return nil, fmt.Errorf("server.api_key must not be in config.toml; move it to the secrets file (%s) or the EMBY_API_KEY env var", c.SecretPath)
+		}
+	}
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -103,6 +109,9 @@ func (c *Config) applyDefaults() {
 	if c.StatusPath == "" {
 		c.StatusPath = "/var/local/preloadd/status.json"
 	}
+	if c.SecretPath == "" {
+		c.SecretPath = "/boot/config/plugins/watch-aware-preloader/secrets.toml"
+	}
 }
 
 // Validate checks required fields and ranges.
@@ -112,9 +121,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.URL == "" {
 		return fmt.Errorf("server.url is required")
-	}
-	if c.Server.APIKey == "" {
-		return fmt.Errorf("server.api_key is required")
 	}
 	if c.Preload.RAMPercent < 1 || c.Preload.RAMPercent > 100 {
 		return fmt.Errorf("preload.ram_percent must be 1-100, got %d", c.Preload.RAMPercent)

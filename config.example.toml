@@ -1,10 +1,17 @@
 # preloadd configuration. Copy to config.toml and fill in your values.
-# config.toml is gitignored because api_key is a secret.
+# config.toml is gitignored (it holds deployment-specific settings). The API key
+# is NOT here - it lives in the secrets file (see below) or the EMBY_API_KEY env var.
+
+# Optional: override where the engine reads the secrets file.
+# Defaults to /boot/config/plugins/watch-aware-preloader/secrets.toml.
+# secret_path = "/boot/config/plugins/watch-aware-preloader/secrets.toml"
 
 [server]
 type = "emby"
 url = "http://192.168.1.126:8096"
-api_key = "PUT-YOUR-EMBY-API-KEY-HERE"
+# The API key is NOT stored here. Put it in the secrets file (see
+# secrets.example.toml) or the EMBY_API_KEY env var. A stray api_key in this
+# file is a hard error at startup.
 
 [users]
 # User names to preload for. Leave empty to include all users.
