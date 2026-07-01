@@ -62,7 +62,7 @@ jobs:
             echo "checksum=${checksum}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Render the .plg from the Jinja template
+      - name: Render the .plg from the template
         env:
           PLUGIN_VERSION: ${{ github.ref_name }}
           PLUGIN_CHECKSUM: ${{ steps.pkg.outputs.checksum }}
@@ -73,21 +73,30 @@ jobs:
             changelog="Release ${PLUGIN_VERSION}"
           fi
           export PLUGIN_CHANGELOG="${changelog}"
-          # Use a venv so the render never trips PEP 668 externally-managed-env.
-          # Pin jinja2 to a vetted version for a reproducible, supply-chain-safe
-          # build (3.1.6 carries the CVE-2024-56326/56201 fixes).
-          python3 -m venv /tmp/rendervenv
-          /tmp/rendervenv/bin/pip install --quiet 'jinja2==3.1.6'
-          /tmp/rendervenv/bin/python - <<'PY'
+          # Render with the stdlib only - no pip/venv/network. plugin.j2 uses just
+          # {{ env['VAR'] }} substitution, so a tiny regex renderer covers it and
+          # keeps CI free of any unpinned runtime dependency. The guard below fails
+          # loudly if the template ever grows a feature beyond simple substitution.
+          python3 - <<'PY'
           import os
-          import jinja2
+          import re
+          import sys
+
+          token = re.compile(r"\{\{\s*env\[['\"]([^'\"]+)['\"]\]\s*\}\}")
+
+          def replace(match):
+              key = match.group(1)
+              value = os.environ.get(key)
+              if value is None:
+                  sys.exit(f"render: missing environment variable {key}")
+              return value
 
           with open('plugin/plugin.j2', encoding='utf-8') as fh:
               template = fh.read()
-          rendered = jinja2.Environment(
-              undefined=jinja2.StrictUndefined,
-              autoescape=False,
-          ).from_string(template).render(env=os.environ)
+          rendered = token.sub(replace, template)
+          if '{{' in rendered or '{%' in rendered:
+              sys.exit('render: unresolved template tokens remain '
+                       '(plugin.j2 uses features beyond {{ env[...] }})')
           with open('release/watch-aware-preloader.plg', 'w', encoding='utf-8') as fh:
               fh.write(rendered)
           PY
