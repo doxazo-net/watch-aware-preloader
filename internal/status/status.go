@@ -33,9 +33,13 @@ type Status struct {
 
 // Write atomically writes s as indented JSON to path. It creates the parent
 // directory (0750) if needed, writes to a uniquely-named temp file in the same
-// directory, then renames it over path so a concurrent reader never observes a
-// partial file. The file keeps os.CreateTemp's 0600 mode. Any failure is
-// returned; the caller treats it as non-fatal.
+// directory, fsyncs it, then renames it over path so a concurrent reader never
+// observes a partial file. The fsync-before-rename ensures the temp file's data
+// is durable before the rename publishes it, so a crash between write and rename
+// cannot leave a truncated or empty status.json (the target's own filesystem
+// still governs whether the rename itself survives a crash). The file keeps
+// os.CreateTemp's 0600 mode. Any failure is returned; the caller treats it as
+// non-fatal.
 func Write(path string, s Status) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -54,6 +58,10 @@ func Write(path string, s Status) error {
 	if _, err := tmp.Write(b); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("writing temp status file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("syncing temp status file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp status file: %w", err)
