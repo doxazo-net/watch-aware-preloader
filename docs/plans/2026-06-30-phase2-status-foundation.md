@@ -17,7 +17,7 @@
 - Status writing is **best-effort / non-fatal**: a write failure logs at WARN and never turns a successful warm into a failed run.
 - Atomic write only: temp file in the same directory, then `os.Rename` over the target.
 - Default status path: `/var/local/preloadd/status.json` (tmpfs on Unraid; overridable via config for tests).
-- `by_tier` keys are `core.Tier.String()` names; `by_user` keys are raw Emby `UserID`.
+- `by_tier` keys are the snake_case labels `buildStatus` derives from `core.Tier.String()` (which is kebab-case, e.g. `next-up` -> `next_up`); `by_user` keys are raw Emby `UserID`.
 - Commit messages end with: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 - Before any push: `GOOS=linux golangci-lint run ./...` (lint the Linux path).
 

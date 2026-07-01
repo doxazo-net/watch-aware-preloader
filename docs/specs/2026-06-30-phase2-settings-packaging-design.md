@@ -112,8 +112,9 @@ Decisions:
   were produced.
 - `ok` + `error` - a failed or partial run still writes status with `ok:false`
   and a short message, so the panel shows failures instead of silently stale data.
-- `by_tier` - keys are `Tier.String()` names (`resume`, `next_up`,
-  `recently_added`, ...), not integers - stable and readable.
+- `by_tier` - keys are the snake_case labels `buildStatus` derives from
+  `Tier.String()` (which is kebab-case, e.g. `next-up`), i.e. `resume`,
+  `next_up`, `recently_added`, ... - stable and readable, not integers.
 - `by_user` - keys are the raw Emby `UserID`. The engine does **not** embed
   usernames; the panel resolves IDs to current names at display time. `UserID` is
   the stable join key (usernames rename, tokens rotate; the ID does not) and is

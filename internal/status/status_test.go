@@ -43,6 +43,14 @@ func TestWriteCreatesFileAndParentDir(t *testing.T) {
 	if got.ByTier["recently_added"] != 26 || got.ByUser["7"] != 15 {
 		t.Errorf("maps round-tripped wrong: %+v / %+v", got.ByTier, got.ByUser)
 	}
+	// The status file holds Emby UserIDs; it must stay owner-only (0600).
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("file mode = %o, want 0600", perm)
+	}
 }
 
 func TestWriteJSONKeys(t *testing.T) {
