@@ -44,8 +44,13 @@ settings page and status panel are Slice C.
   carry no user field (run as root). Slice C's UI will make the interval editable
   (re-writing the `.cron` + `update_cron`). Exact mechanism confirmed on the
   `outatime` install test.
-- **Secrets seeding:** seed `secrets.toml` (0600) with a placeholder if absent -
-  the plugin OWNS `0600` enforcement here (the engine read-side does not).
+- **Secrets seeding:** seed `secrets.toml` with a placeholder if absent and
+  best-effort `chmod 600` it. IMPORTANT: the default flash path is FAT32, where
+  per-file modes are NOT enforced (mount umask governs), so `chmod` is a no-op
+  there - the key's protection is the flash/root-access boundary (the Unraid
+  norm; every plugin stores creds on flash in plaintext). `chmod 600` still
+  applies if `secret_path` is pointed at a Linux filesystem. Do not claim
+  file-mode protection on the flash path.
 - **Remove `config.example.toml`:** its documented content moves into the seeded
   default `config.toml` (commented template on the user's flash). Keep
   `secrets.example.toml` as the credential-format reference for headless/manual
@@ -64,11 +69,10 @@ plugin/
 src/
   usr/local/emhttp/plugins/watch-aware-preloader/
     preloadd                  # built by CI (go build) into the txz; NOT committed
-    event/started             # boot hook: re-write cron fragment + update_cron from the flash .cfg
+    scripts/rc.preloadd       # lifecycle helper (install|remove|seed|update): seed config + secrets, cron
     (Slice C adds: WatchAwarePreloader.page, include/*.php, images/)
   install/
     slack-desc                # required 11-line package description
-    doinst.sh                 # first-extract: create flash dir, seed config.toml + secrets.toml(0600), install cron
 .github/workflows/
     release.yml               # on GitHub Release -> dkaser action (pinned SHA), least-privilege permissions
 ```
@@ -77,12 +81,13 @@ src/
 
 ## 5. Lifecycle behavior
 
-- **Install / boot (doinst.sh + event/started):**
+- **Install / boot (the `.plg` INLINE install calls `scripts/rc.preloadd install`;
+  Unraid re-runs the `.plg` install on each boot, so it is idempotent):**
   1. `mkdir -p /boot/config/plugins/watch-aware-preloader` (flash).
   2. If `config.toml` absent, seed a commented default (type=emby, placeholder
      `url`, no `api_key`; relies on the engine's default `secret_path`).
-  3. If `secrets.toml` absent, seed a `0600` placeholder (`[server].api_key = ""`);
-     always `chmod 600` it.
+  3. If `secrets.toml` absent, seed a placeholder (`[server].api_key = ""`) and
+     best-effort `chmod 600` (a no-op on the FAT32 flash path - see section 3).
   4. Write the cron fragment
      `/boot/config/plugins/watch-aware-preloader/watch-aware-preloader.cron`
      (interval default `*/15`, no user field) invoking

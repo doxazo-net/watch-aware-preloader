@@ -6,12 +6,15 @@ on:
       - prereleased
       - released
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.id }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach release assets + commit the generated .plg
     steps:
       - uses: dkaser/unraid-plugin-release-action@946d02c81dd87c252e5a06d18f3e74b2ecc401dc # v1.5.0
         with:

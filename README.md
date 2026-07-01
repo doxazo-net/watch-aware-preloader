@@ -32,26 +32,35 @@ Phase 1 (engine MVP, Emby, config via file) is the first deliverable.
 
 The Emby API key is a secret and is kept out of `config.toml`. Provide it either:
 
-- in a secrets file (default `/boot/config/plugins/watch-aware-preloader/secrets.toml`,
-  mode `0600`) under `[server].api_key` - see `secrets.example.toml`; or
+- in a secrets file (default `/boot/config/plugins/watch-aware-preloader/secrets.toml`)
+  under `[server].api_key` - see `secrets.example.toml`; or
 - via the `EMBY_API_KEY` environment variable (which overrides the file).
 
 `config.toml` must not contain `api_key`; the engine refuses to start if it does.
 The secrets-file location can be overridden with the `secret_path` key in
 `config.toml`.
 
+Note on the default location: `/boot` is the Unraid USB flash drive (FAT32),
+which does not enforce Unix file permissions - so the secrets file is only as
+protected as flash/root access to the server (the same model every Unraid plugin
+uses for stored credentials). Point `secret_path` at a Linux filesystem if you
+want `0600` file-mode enforcement.
+
 ## Installation (Unraid plugin)
 
-Install by URL (Plugins -> Install Plugin), pointing at the `.plg` from a release:
+Install by URL (Plugins -> Install Plugin). The release workflow commits the
+generated `.plg` to `main`, so install from its raw URL (it always tracks the
+latest release's package):
 
-```
+```text
 https://raw.githubusercontent.com/sydlexius/watch-aware-preloader/main/plugin/watch-aware-preloader.plg
 ```
 
 On install the plugin:
 - extracts the `preloadd` binary to `/usr/local/emhttp/plugins/watch-aware-preloader/`
 - seeds `/boot/config/plugins/watch-aware-preloader/config.toml` (edit the server URL)
-  and `secrets.toml` (mode `0600`; put your API key under `[server].api_key`)
+  and `secrets.toml` (put your API key under `[server].api_key`; see the Credentials
+  note above about flash file permissions)
 - installs a cron job running `preloadd -once` every 15 minutes
 
 Set the server URL in `config.toml` and the API key in `secrets.toml`, and it

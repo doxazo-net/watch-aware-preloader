@@ -40,7 +40,10 @@ for f in /boot/config/plugins/watch-aware-preloader/watch-aware-preloader-*.txz;
   esac
 done
 
-bash /usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd install
+if ! bash /usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd install; then
+  echo "ERROR: watch-aware-preloader install (seed/cron) failed" >&2
+  exit 1
+fi
 
 echo ""
 echo "----------------------------------------------------"
@@ -57,7 +60,7 @@ echo ""
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
 <![CDATA[
-bash /usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd remove
+bash /usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd remove || echo "WARN: rc.preloadd remove reported an error; continuing uninstall" >&2
 removepkg watch-aware-preloader
 rm -rf /usr/local/emhttp/plugins/watch-aware-preloader
 rm -f /boot/config/plugins/watch-aware-preloader/watch-aware-preloader-*.txz
