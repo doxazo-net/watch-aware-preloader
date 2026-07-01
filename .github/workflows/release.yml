@@ -93,10 +93,14 @@ jobs:
 
           with open('plugin/plugin.j2', encoding='utf-8') as fh:
               template = fh.read()
+          # Detect unsupported template features on the TEMPLATE itself (before value
+          # injection), so an env VALUE that legitimately contains "{{" or "{%" (e.g. a
+          # changelog line) cannot false-trip this guard.
+          leftover = token.sub('', template)
+          if '{{' in leftover or '{%' in leftover:
+              sys.exit("render: plugin.j2 uses template features beyond "
+                       "{{ env['VAR'] }} substitution")
           rendered = token.sub(replace, template)
-          if '{{' in rendered or '{%' in rendered:
-              sys.exit('render: unresolved template tokens remain '
-                       '(plugin.j2 uses features beyond {{ env[...] }})')
           with open('release/watch-aware-preloader.plg', 'w', encoding='utf-8') as fh:
               fh.write(rendered)
           PY
