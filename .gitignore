@@ -25,3 +25,6 @@ config.toml
 # SDD scratch
 .superpowers/
 /preloadd
+
+# Plugin binary is built in CI into the src/ tree, never committed
+src/usr/local/emhttp/plugins/watch-aware-preloader/preloadd

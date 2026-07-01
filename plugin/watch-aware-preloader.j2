@@ -1,0 +1,70 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN>
+
+<PLUGIN
+  name="watch-aware-preloader"
+  author="sydlexius"
+  version="{{ env['PLUGIN_VERSION'] }}"
+  pluginURL="https://raw.githubusercontent.com/sydlexius/watch-aware-preloader/main/plugin/watch-aware-preloader.plg"
+  support="https://github.com/sydlexius/watch-aware-preloader"
+  min="7.0.0"
+  icon="hdd"
+>
+
+<CHANGES>
+<![CDATA[
+###{{ env['PLUGIN_VERSION'] }}###
+{{ env['PLUGIN_CHANGELOG'] }}
+
+For older releases, see https://github.com/sydlexius/watch-aware-preloader/releases
+]]>
+</CHANGES>
+
+<FILE Name="/boot/config/plugins/watch-aware-preloader/watch-aware-preloader-{{ env['PLUGIN_VERSION'] }}-noarch-1.txz">
+<URL>https://github.com/sydlexius/watch-aware-preloader/releases/download/{{ env['PLUGIN_VERSION'] }}/watch-aware-preloader-{{ env['PLUGIN_VERSION'] }}-noarch-1.txz</URL>
+<SHA256>{{ env['PLUGIN_CHECKSUM'] }}</SHA256>
+</FILE>
+
+<!-- install script (runs on install AND on each Unraid boot) -->
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+upgradepkg --install-new /boot/config/plugins/watch-aware-preloader/watch-aware-preloader-{{ env['PLUGIN_VERSION'] }}-noarch-1.txz
+
+# remove superseded packages
+for f in /boot/config/plugins/watch-aware-preloader/watch-aware-preloader-*.txz; do
+  [ -e "$f" ] || continue
+  case "$f" in
+    */watch-aware-preloader-{{ env['PLUGIN_VERSION'] }}-noarch-1.txz) ;;
+    *) rm -f "$f" ;;
+  esac
+done
+
+bash /usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd install
+
+echo ""
+echo "----------------------------------------------------"
+echo " watch-aware-preloader has been installed."
+echo " Version: {{ env['PLUGIN_VERSION'] }}"
+echo " Set your server URL + API key, then it runs every 15 min."
+echo "----------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+<!-- remove script: stop cron + runtime; remove cached .txz but PRESERVE flash config/secrets -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+bash /usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd remove
+removepkg watch-aware-preloader
+rm -rf /usr/local/emhttp/plugins/watch-aware-preloader
+rm -f /boot/config/plugins/watch-aware-preloader/watch-aware-preloader-*.txz
+# NOTE: /boot/config/plugins/watch-aware-preloader (config.toml, secrets.toml) is
+# intentionally preserved so a reinstall keeps settings. Delete it by hand to purge.
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>

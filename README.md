@@ -40,6 +40,27 @@ The Emby API key is a secret and is kept out of `config.toml`. Provide it either
 The secrets-file location can be overridden with the `secret_path` key in
 `config.toml`.
 
+## Installation (Unraid plugin)
+
+Install by URL (Plugins -> Install Plugin), pointing at the `.plg` from a release:
+
+```
+https://raw.githubusercontent.com/sydlexius/watch-aware-preloader/main/plugin/watch-aware-preloader.plg
+```
+
+On install the plugin:
+- extracts the `preloadd` binary to `/usr/local/emhttp/plugins/watch-aware-preloader/`
+- seeds `/boot/config/plugins/watch-aware-preloader/config.toml` (edit the server URL)
+  and `secrets.toml` (mode `0600`; put your API key under `[server].api_key`)
+- installs a cron job running `preloadd -once` every 15 minutes
+
+Set the server URL in `config.toml` and the API key in `secrets.toml`, and it
+starts warming the cache on the next cron tick. Uninstalling removes the cron job
+and binary but preserves your `config.toml`/`secrets.toml` on the flash drive.
+
+Releases are tagged with letter-free versions (Slackware requirement), e.g.
+`2026.07.01`.
+
 ## License
 
 [MIT](LICENSE).
