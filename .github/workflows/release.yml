@@ -1,0 +1,25 @@
+name: Release Unraid Plugin
+
+on:
+  release:
+    types:
+      - prereleased
+      - released
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach release assets + commit the generated .plg
+    steps:
+      - uses: dkaser/unraid-plugin-release-action@946d02c81dd87c252e5a06d18f3e74b2ecc401dc # v1.5.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          go_dir: .
+          build_script: ./plugin/build.sh
+          build_prereleases: "true"
+          changelog_releases: "5"
