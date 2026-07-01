@@ -68,17 +68,16 @@ EOF
 
 ensure_marker() {
     # Unraid's update_cron only collates a plugin's .cron fragment when the
-    # /var/log/plugins/<name>.plg marker is present - that is the manager's
-    # "this plugin is installed" flag. On a FRESH install the manager creates
-    # the marker only AFTER this inline install script runs, so the first
-    # update_cron would skip our fragment and cron would not start until the
-    # next reboot. Pre-create the marker so cron collates on install. The
-    # manager's own install path unlinks any existing symlink before recreating
-    # it, so pre-empting it here is safe and idempotent (ln -sf on update too).
-    if [ -f "${PLG_FILE}" ]; then
-        mkdir -p /var/log/plugins
-        ln -sf "${PLG_FILE}" "${PLG_MARKER}"
-    fi
+    # /var/log/plugins/<name>.plg marker is present. On install-by-URL the plugin
+    # manager persists PLG_FILE (/boot/config/plugins/<name>.plg) only AFTER this
+    # inline install script runs, so PLG_FILE may not exist yet - create the
+    # marker UNCONDITIONALLY rather than gating on it. A temporarily-dangling
+    # symlink is safe: update_cron globs /var/log/plugins/*.plg and uses only the
+    # basename to locate the cron dir (it never dereferences the target), and the
+    # manager later re-points the symlink to the persisted .plg. Verified on
+    # Unraid 7.3.1: gating on [ -f PLG_FILE ] left cron uncollated until reboot.
+    mkdir -p /var/log/plugins
+    ln -sf "${PLG_FILE}" "${PLG_MARKER}"
 }
 
 run_update_cron() {
