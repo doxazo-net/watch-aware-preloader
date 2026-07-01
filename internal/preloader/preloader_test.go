@@ -240,3 +240,58 @@ func TestRunWarmErrorNotCountedPreloaded(t *testing.T) {
 		t.Errorf("Preloaded = %d, want 0 when Warm returns an error", stats.Preloaded)
 	}
 }
+
+func TestRunByUserCounts(t *testing.T) {
+	cache := &fakeCache{resident: -1} // nothing resident -> everything preloads
+	fs := fakeFS{
+		"/mnt/user/TV/a.mkv": 5 << 30,
+		"/mnt/user/TV/b.mkv": 5 << 30,
+		"/mnt/user/TV/c.mkv": 5 << 30,
+	}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	targets := []core.PreloadTarget{
+		{Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 8_000_000, UserID: "3"}, Tier: core.TierResume},
+		{Item: core.MediaItem{ID: "b", ServerPath: "/mnt/user/TV/b.mkv", BitrateBps: 8_000_000, UserID: "3"}, Tier: core.TierNextUp},
+		{Item: core.MediaItem{ID: "c", ServerPath: "/mnt/user/TV/c.mkv", BitrateBps: 8_000_000, UserID: "7"}, Tier: core.TierNextUp},
+	}
+	stats := p.Run(context.Background(), targets, 1<<40)
+
+	if stats.Preloaded != 3 {
+		t.Fatalf("Preloaded = %d, want 3", stats.Preloaded)
+	}
+	if got := stats.ByUser["3"]; got != 2 {
+		t.Errorf("ByUser[3] = %d, want 2", got)
+	}
+	if got := stats.ByUser["7"]; got != 1 {
+		t.Errorf("ByUser[7] = %d, want 1", got)
+	}
+}
+
+func TestRunByUserCountsSkipResident(t *testing.T) {
+	cache := &fakeCache{resident: 1 << 40} // everything fully resident -> skip branch
+	fs := fakeFS{
+		"/mnt/user/TV/a.mkv": 5 << 30,
+		"/mnt/user/TV/b.mkv": 5 << 30,
+		"/mnt/user/TV/c.mkv": 5 << 30,
+	}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	targets := []core.PreloadTarget{
+		{Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 8_000_000, UserID: "3"}, Tier: core.TierResume},
+		{Item: core.MediaItem{ID: "b", ServerPath: "/mnt/user/TV/b.mkv", BitrateBps: 8_000_000, UserID: "3"}, Tier: core.TierNextUp},
+		{Item: core.MediaItem{ID: "c", ServerPath: "/mnt/user/TV/c.mkv", BitrateBps: 8_000_000, UserID: "7"}, Tier: core.TierNextUp},
+	}
+	stats := p.Run(context.Background(), targets, 1<<40)
+
+	if stats.Skipped != len(targets) {
+		t.Fatalf("Skipped = %d, want %d", stats.Skipped, len(targets))
+	}
+	if stats.Preloaded != 0 {
+		t.Fatalf("Preloaded = %d, want 0", stats.Preloaded)
+	}
+	if got := stats.ByUser["3"]; got != 2 {
+		t.Errorf("ByUser[3] = %d, want 2", got)
+	}
+	if got := stats.ByUser["7"]; got != 1 {
+		t.Errorf("ByUser[7] = %d, want 1", got)
+	}
+}

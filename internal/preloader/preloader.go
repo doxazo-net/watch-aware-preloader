@@ -52,6 +52,7 @@ type RunStats struct {
 	Missing     int
 	BytesWarmed int64
 	ByTier      map[core.Tier]int
+	ByUser      map[string]int
 	Warmed      []WarmedRange
 }
 
@@ -87,7 +88,7 @@ func HeadBytes(cfg Config, it core.MediaItem) int64 {
 
 // Run warms targets in order until the budget is exhausted.
 func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budgetBytes int64) RunStats {
-	stats := RunStats{ByTier: map[core.Tier]int{}}
+	stats := RunStats{ByTier: map[core.Tier]int{}, ByUser: map[string]int{}}
 	var used int64
 	for _, t := range targets {
 		if ctx.Err() != nil {
@@ -114,6 +115,7 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 		if p.resident(hostPath, pl.offset, pl.head) && p.resident(hostPath, pl.tailOffset, pl.tail) {
 			stats.Skipped++
 			stats.ByTier[t.Tier]++
+			stats.ByUser[t.Item.UserID]++
 			continue
 		}
 
@@ -136,6 +138,7 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 		stats.Preloaded++
 		stats.BytesWarmed += cost
 		stats.ByTier[t.Tier]++
+		stats.ByUser[t.Item.UserID]++
 		stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: pl.offset, Length: pl.head})
 		p.log.Info("preloaded", "name", t.Item.Name, "tier", t.Tier.String(),
 			"user", t.Item.UserID, "offset", pl.offset, "bytes", pl.head)

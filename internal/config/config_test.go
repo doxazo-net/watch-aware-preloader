@@ -178,3 +178,34 @@ func TestResidencyRejectsNonPositive(t *testing.T) {
 		})
 	}
 }
+
+func TestStatusPathDefault(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(p, []byte(sample), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.StatusPath != "/var/local/preloadd/status.json" {
+		t.Errorf("StatusPath default = %q, want /var/local/preloadd/status.json", c.StatusPath)
+	}
+}
+
+func TestStatusPathOverride(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	// Prepend at the root: a bare key AFTER a [table] header would bind to
+	// that table (schedule.status_path), not the root status_path.
+	body := "status_path = \"/tmp/custom/status.json\"\n" + sample
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.StatusPath != "/tmp/custom/status.json" {
+		t.Errorf("StatusPath = %q, want /tmp/custom/status.json", c.StatusPath)
+	}
+}

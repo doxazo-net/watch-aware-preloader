@@ -52,7 +52,7 @@ func (d *Daemon) budget() int64 {
 }
 
 func (d *Daemon) sweep(ctx context.Context) {
-	if _, err := RunOnce(ctx, d.p, d.cfg.Users.Enabled, d.pre, d.budget(), d.log); err != nil {
+	if _, err := SweepAndRecord(ctx, d.p, d.cfg.Users.Enabled, d.pre, d.budget(), "daemon", d.cfg.StatusPath, d.log); err != nil {
 		d.log.Error("sweep failed", "err", err)
 	}
 }
