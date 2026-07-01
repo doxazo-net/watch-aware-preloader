@@ -50,12 +50,13 @@ type ResidencyConfig struct {
 
 // Config is the full preloadd configuration.
 type Config struct {
-	Server    ServerConfig    `toml:"server"`
-	Users     UsersConfig     `toml:"users"`
-	Preload   PreloadConfig   `toml:"preload"`
-	PathMap   []PathRule      `toml:"path_map"`
-	Schedule  ScheduleConfig  `toml:"schedule"`
-	Residency ResidencyConfig `toml:"residency"`
+	Server     ServerConfig    `toml:"server"`
+	Users      UsersConfig     `toml:"users"`
+	Preload    PreloadConfig   `toml:"preload"`
+	PathMap    []PathRule      `toml:"path_map"`
+	Schedule   ScheduleConfig  `toml:"schedule"`
+	Residency  ResidencyConfig `toml:"residency"`
+	StatusPath string          `toml:"status_path"` // where the engine writes status.json
 }
 
 // Load decodes a TOML config file, applies defaults, and validates it.
@@ -98,6 +99,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Residency.ProbeThreshold == 0 {
 		c.Residency.ProbeThreshold = 150 * time.Millisecond
+	}
+	if c.StatusPath == "" {
+		c.StatusPath = "/var/local/preloadd/status.json"
 	}
 }
 

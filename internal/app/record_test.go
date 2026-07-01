@@ -1,0 +1,95 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/sydlexius/watch-aware-preloader/internal/core"
+	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
+	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
+	"github.com/sydlexius/watch-aware-preloader/internal/status"
+)
+
+func TestBuildStatusMapsFields(t *testing.T) {
+	stats := preloader.RunStats{
+		Preloaded:   3,
+		Skipped:     1,
+		Missing:     2,
+		BytesWarmed: 1024,
+		ByTier:      map[core.Tier]int{core.TierResume: 1, core.TierNextUp: 3},
+		ByUser:      map[string]int{"3": 2, "7": 2},
+	}
+	s := buildStatus("once", 8<<30, 1500*time.Millisecond, stats, nil)
+
+	if s.SchemaVersion != status.SchemaVersion {
+		t.Errorf("SchemaVersion = %d, want %d", s.SchemaVersion, status.SchemaVersion)
+	}
+	if s.Mode != "once" || !s.OK || s.Error != "" {
+		t.Errorf("mode/ok/error wrong: %+v", s)
+	}
+	if s.DurationMs != 1500 || s.BudgetBytes != 8<<30 || s.BytesWarmed != 1024 {
+		t.Errorf("numeric fields wrong: %+v", s)
+	}
+	if s.ByTier["resume"] != 1 || s.ByTier["next_up"] != 3 {
+		t.Errorf("ByTier keys not stringified: %+v", s.ByTier)
+	}
+	if s.ByUser["3"] != 2 || s.ByUser["7"] != 2 {
+		t.Errorf("ByUser wrong: %+v", s.ByUser)
+	}
+}
+
+func TestBuildStatusRecordsError(t *testing.T) {
+	s := buildStatus("once", 0, time.Second, preloader.RunStats{}, errors.New("boom"))
+	if s.OK {
+		t.Error("OK should be false on error")
+	}
+	if s.Error != "boom" {
+		t.Errorf("Error = %q, want boom", s.Error)
+	}
+}
+
+func TestSweepAndRecordWriteFailureIsNonFatal(t *testing.T) {
+	p := &stubProvider{
+		users:   []emby.User{{ID: "1", Name: "jesse"}},
+		resume:  map[string][]core.MediaItem{"1": {{ID: "r1", ServerPath: "/x/r1.mkv", BitrateBps: 8_000_000}}},
+		nextUp:  map[string][]core.MediaItem{},
+		latest:  map[string][]core.MediaItem{},
+		playing: map[string]bool{},
+	}
+	fs := stubFS{"/x/r1.mkv": 5 << 30}
+	cfg := preloader.Config{TargetSeconds: 20, MinHeadBytes: 8 << 20, MaxHeadBytes: 250 << 20, TailBytes: 1 << 20}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	pre := preloader.New(cfg, stubCache{}, pathmap.New(nil), fs, logger)
+
+	// A statusPath whose parent is a regular file forces status.Write's
+	// os.MkdirAll to fail.
+	f := filepath.Join(t.TempDir(), "notadir")
+	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	statusPath := filepath.Join(f, "status.json")
+
+	wantStats, wantErr := RunOnce(context.Background(), p, nil, pre, 1<<40, logger)
+	if wantErr != nil {
+		t.Fatalf("baseline RunOnce failed: %v", wantErr)
+	}
+
+	stats, err := SweepAndRecord(context.Background(), p, nil, pre, 1<<40, "once", statusPath, logger)
+	if err != nil {
+		t.Fatalf("SweepAndRecord returned err = %v, want nil (write failure must not surface)", err)
+	}
+	if stats.Preloaded != wantStats.Preloaded {
+		t.Errorf("Preloaded = %d, want %d (matching a direct RunOnce)", stats.Preloaded, wantStats.Preloaded)
+	}
+
+	if _, statErr := os.Stat(statusPath); statErr == nil {
+		t.Error("expected no status.json to be created when write fails")
+	}
+}

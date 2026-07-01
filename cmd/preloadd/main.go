@@ -90,7 +90,7 @@ func main() {
 	switch mode {
 	case "verify":
 		budget := d.Budget()
-		stats, verifyErr := app.RunOnce(context.Background(), client, cfg.Users.Enabled, pre, budget, log)
+		stats, verifyErr := app.SweepAndRecord(context.Background(), client, cfg.Users.Enabled, pre, budget, "verify", cfg.StatusPath, log)
 		if verifyErr != nil {
 			log.Error("verify sweep failed", "err", verifyErr)
 			os.Exit(1)
@@ -103,7 +103,7 @@ func main() {
 		}
 
 	case "once":
-		stats, sweepErr := app.RunOnce(context.Background(), client, cfg.Users.Enabled, pre, d.Budget(), log)
+		stats, sweepErr := app.SweepAndRecord(context.Background(), client, cfg.Users.Enabled, pre, d.Budget(), "once", cfg.StatusPath, log)
 		if sweepErr != nil {
 			log.Error("sweep failed", "err", sweepErr)
 			os.Exit(1)
