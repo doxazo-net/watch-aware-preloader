@@ -48,12 +48,19 @@ want `0600` file-mode enforcement.
 
 ## Installation (Unraid plugin)
 
-Install by URL (Plugins -> Install Plugin). The release workflow commits the
-generated `.plg` to `main`, so install from its raw URL (it always tracks the
-latest release's package):
+Install by URL (Plugins -> Install Plugin). The release workflow attaches the
+generated `.plg` to each release, so install from the stable "latest release"
+asset URL (it always tracks the newest stable release's package):
 
 ```text
-https://raw.githubusercontent.com/sydlexius/watch-aware-preloader/main/plugin/watch-aware-preloader.plg
+https://github.com/sydlexius/watch-aware-preloader/releases/latest/download/watch-aware-preloader.plg
+```
+
+To install a specific pre-release build for testing, use that release's
+versioned asset URL instead (the `latest` URL only resolves to stable releases):
+
+```text
+https://github.com/sydlexius/watch-aware-preloader/releases/download/<version>/watch-aware-preloader.plg
 ```
 
 On install the plugin:
