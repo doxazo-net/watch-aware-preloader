@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -25,7 +26,10 @@ type Store struct {
 // A missing file (with no env var) or an empty key yields a friendly error naming
 // both sources.
 func APIKey(secretPath string) (string, error) {
-	if k := os.Getenv("EMBY_API_KEY"); k != "" {
+	// TrimSpace both sources so an accidental whitespace-only value (e.g. a
+	// stray space in the env var or file) is treated as unset rather than
+	// silently passed to Emby, which would reject it.
+	if k := strings.TrimSpace(os.Getenv("EMBY_API_KEY")); k != "" {
 		return k, nil
 	}
 	var s Store
@@ -41,10 +45,11 @@ func APIKey(secretPath string) (string, error) {
 		}
 		return "", fmt.Errorf("reading secrets file %s: %w", secretPath, err)
 	}
-	if s.Server.APIKey == "" {
+	key := strings.TrimSpace(s.Server.APIKey)
+	if key == "" {
 		return "", notFoundErr(secretPath)
 	}
-	return s.Server.APIKey, nil
+	return key, nil
 }
 
 func notFoundErr(secretPath string) error {

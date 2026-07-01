@@ -28,6 +28,27 @@ func TestAPIKeyEnvOverrideWins(t *testing.T) {
 	}
 }
 
+func TestAPIKeyWhitespaceEnvIsIgnored(t *testing.T) {
+	t.Setenv("EMBY_API_KEY", "   ")
+	// Whitespace-only env must be treated as unset and fall through to the file.
+	p := writeSecrets(t, "[server]\napi_key = \"file-key\"\n")
+	got, err := APIKey(p)
+	if err != nil {
+		t.Fatalf("APIKey: %v", err)
+	}
+	if got != "file-key" {
+		t.Errorf("got %q, want file-key (whitespace env must be ignored)", got)
+	}
+}
+
+func TestAPIKeyWhitespaceFileKeyIsError(t *testing.T) {
+	t.Setenv("EMBY_API_KEY", "")
+	p := writeSecrets(t, "[server]\napi_key = \"   \"\n")
+	if _, err := APIKey(p); err == nil {
+		t.Error("expected error for whitespace-only api_key in the secrets file")
+	}
+}
+
 func TestAPIKeyFromFile(t *testing.T) {
 	t.Setenv("EMBY_API_KEY", "") // neutralize ambient override
 	p := writeSecrets(t, "[server]\napi_key = \"file-key\"\n")
