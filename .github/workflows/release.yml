@@ -137,7 +137,7 @@ jobs:
           gh release create "${PLUGIN_VERSION}" \
             --draft \
             --title "${PLUGIN_VERSION}" \
-            --notes "Automated release ${PLUGIN_VERSION}. Install or update from the stable URL: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/watch-aware-preloader.plg" \
+            --notes "Automated release ${PLUGIN_VERSION}. Install or update from the latest-release URL: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/watch-aware-preloader.plg" \
             "release/${{ steps.pkg.outputs.txz }}" \
             "release/${{ steps.pkg.outputs.txz }}.sha256" \
             "release/watch-aware-preloader.plg"
