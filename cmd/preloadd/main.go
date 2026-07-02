@@ -15,7 +15,6 @@ import (
 	"github.com/sydlexius/watch-aware-preloader/internal/config"
 	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
 	"github.com/sydlexius/watch-aware-preloader/internal/pagecache"
-	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
 	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
 	"github.com/sydlexius/watch-aware-preloader/internal/secrets"
 )
@@ -47,6 +46,22 @@ func selectMode(once, daemon, verify bool) (string, error) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "detect-pathmaps" {
+		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+		cfg, err := config.Load(configPathFromArgs(os.Args[2:]))
+		var manual []config.PathRule
+		if err != nil {
+			log.Warn("config load failed; reporting docker-only rules", "err", err)
+		} else {
+			manual = cfg.PathMap
+		}
+		if err := runDetectPathmaps(context.Background(), manual, execRunner, os.Stdout); err != nil {
+			log.Error("detect-pathmaps failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	cfgPath := flag.String("config", "config.toml", "path to config file")
 	verify := flag.Bool("verify", false, "run one sweep, then report cache residency and exit")
 	once := flag.Bool("once", false, "run exactly one sweep then exit (cron model; default when no mode flag is given)")
@@ -80,17 +95,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	rules := make([]pathmap.Rule, 0, len(cfg.PathMap))
-	for _, r := range cfg.PathMap {
-		rules = append(rules, pathmap.Rule{From: r.From, To: r.To})
-	}
 	preCfg := preloader.Config{
 		TargetSeconds: cfg.Preload.TargetSeconds,
 		MinHeadBytes:  cfg.Preload.MinHeadMB << 20,
 		MaxHeadBytes:  cfg.Preload.MaxHeadMB << 20,
 		TailBytes:     cfg.Preload.TailMB << 20,
 	}
-	pre := preloader.New(preCfg, pagecache.New(cfg.Residency.ProbeBytes, cfg.Residency.ProbeThreshold, cfg.Residency.ProbeTimeout, log), pathmap.New(rules), preloader.DefaultFS(), log)
+	mapper := buildMapper(context.Background(), cfg.PathMap, execRunner, log)
+	pre := preloader.New(preCfg, pagecache.New(cfg.Residency.ProbeBytes, cfg.Residency.ProbeThreshold, cfg.Residency.ProbeTimeout, log), mapper, preloader.DefaultFS(), log)
 
 	d := app.NewDaemon(cfg, client, pre, log)
 

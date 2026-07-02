@@ -86,3 +86,40 @@ func TestToHostEmptyRulesPassThrough(t *testing.T) {
 		t.Errorf("empty mapper should pass through, got %q ok=%v", got, ok)
 	}
 }
+
+func TestUnraidUNCFallback(t *testing.T) {
+	m := New(nil, WithUnraidUNCFallback())
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{`\\outatime\Movies\Film\a.mkv`, "/mnt/user/Movies/Film/a.mkv", true},
+		{`\\OUTATIME\TV\Show\S01E01.mkv`, "/mnt/user/TV/Show/S01E01.mkv", true}, // host case-agnostic
+		{`\\host\Share`, "/mnt/user/Share", true},                               // no trailing segment
+		{`/mnt/user/Movies/a.mkv`, "/mnt/user/Movies/a.mkv", true},              // host-correct path passes through
+		{`\\host`, "", false},                  // no share segment
+		{`\\host\..\..\etc\passwd`, "", false}, // traversal rejected (escapes /mnt/)
+		{`/data/Movies/a.mkv`, "", false},      // non-/mnt, unmatched -> missing
+	}
+	for _, c := range cases {
+		got, ok := m.ToHost(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("ToHost(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestExplicitRuleBeatsFallback(t *testing.T) {
+	m := New([]Rule{{From: `\\outatime\Movies`, To: "/mnt/disk1/Movies"}}, WithUnraidUNCFallback())
+	got, ok := m.ToHost(`\\outatime\Movies\a.mkv`)
+	if !ok || got != "/mnt/disk1/Movies/a.mkv" {
+		t.Errorf("explicit rule should win: got (%q,%v)", got, ok)
+	}
+}
+
+func TestFallbackDisabledByDefault(t *testing.T) {
+	m := New(nil) // no option
+	if got, ok := m.ToHost(`\\host\Share\a.mkv`); ok {
+		t.Errorf("fallback must be opt-in; got (%q,%v)", got, ok)
+	}
+}
