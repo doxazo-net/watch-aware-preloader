@@ -94,6 +94,24 @@ func (c *Client) Users(ctx context.Context) ([]User, error) {
 	return users, nil
 }
 
+// Library is a media library (VirtualFolder) the server exposes. ID is the
+// stable ItemId; Type is the Emby CollectionType (movies/tvshows/music/...),
+// empty when the server reports it as null.
+type Library struct {
+	ID   string `json:"ItemId"`
+	Name string `json:"Name"`
+	Type string `json:"CollectionType"`
+}
+
+// Libraries lists the server's media libraries (VirtualFolders).
+func (c *Client) Libraries(ctx context.Context) ([]Library, error) {
+	var libs []Library
+	if err := c.get(ctx, "/Library/VirtualFolders", nil, &libs); err != nil {
+		return nil, err
+	}
+	return libs, nil
+}
+
 // Resume returns the user's in-progress items with their resume offsets.
 func (c *Client) Resume(ctx context.Context, userID string) ([]core.MediaItem, error) {
 	return c.itemsTo(ctx, "/Users/"+userID+"/Items/Resume", mediaFields(), userID)
