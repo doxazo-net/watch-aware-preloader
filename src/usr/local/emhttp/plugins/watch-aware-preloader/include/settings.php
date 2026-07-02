@@ -2,28 +2,25 @@
 
 declare(strict_types=1);
 
-// Pure settings serialization for the flash .cfg. No I/O here: wap_render_cfg()
-// turns posted form fields into the KEY="value" body that BOTH consumers read -
-// the webGui page (Unraid parse_plugin_cfg / parse_ini) and rc.preloadd's
-// cfg_get (grep + strip-surrounding-quotes). Keeping this I/O-free is what makes
-// it unit-testable by test/settings_test.php without a real flash disk or HTTP.
+// Settings sanitization helpers, applied by the root #include hook (presave.php)
+// BEFORE /update.php writes the flash .cfg. Unraid serves direct plugin PHP
+// endpoints as the unprivileged "nobody" user, which cannot write the 0600-root
+// FAT flash dir; only /update.php (which runs as root) can. So the settings save
+// goes through /update.php, and this code normalizes the posted values in place
+// so /update.php writes clean, bounded KEY="value" pairs. No I/O here - pure
+// transforms, unit-tested by test/settings_test.php.
 
 /**
- * Sanitize a free-text .cfg scalar. Both consumers put the value inside
- * double quotes, and NEITHER unescapes it: rc.preloadd's cfg_get strips one
- * surrounding quote pair and hands the raw bytes to toml_escape downstream, and
- * Unraid's ini parser treats a bare quote/newline as a syntax break. So the
- * robust policy is to REMOVE the characters that can break the KEY="value" line
- * rather than escape them (escaping would leave literal backslashes in the value
- * because the consumers never unescape). Control chars (newline/CR/tab/etc.)
- * are the real line-injection vector; double-quote and backslash never appear
- * legitimately in a server URL, comma-separated user list, or path-map, so
- * dropping them is lossless for real input and closes the injection surface.
+ * Sanitize a free-text .cfg scalar. /update.php writes values as KEY="$value"
+ * with NO escaping, and rc.preloadd's cfg_get strips one surrounding quote pair
+ * without unescaping, so the robust policy is to REMOVE characters that could
+ * break the KEY="value" line rather than escape them. Control chars (newline/CR/
+ * tab/etc.) are the real line-injection vector; double-quote and backslash never
+ * appear legitimately in a server URL, comma-separated user list, or path-map,
+ * so dropping them is lossless for real input and closes the injection surface.
  */
 function wap_cfg_sanitize_str(string $v): string
 {
-    // Drop C0 controls (0x00-0x1F), DEL (0x7F), and the quote/backslash that
-    // would terminate or corrupt the quoted scalar.
     $v = preg_replace('/[\x00-\x1F\x7F"\\\\]/', '', $v);
 
     return trim((string) $v);
@@ -31,12 +28,11 @@ function wap_cfg_sanitize_str(string $v): string
 
 /**
  * Coerce a posted numeric field to an int within [$min, $max], falling back to
- * $default when the value is not a plain decimal or is out of range. The value
- * is quoted in the .cfg but rc.preloadd renders it UNQUOTED in config.toml, so
- * it must be a bare integer. Only decimal digits (optionally signed, optionally
- * with a fractional part that is then truncated) are accepted; is_numeric()
- * would also pass scientific notation like "1e2" - which a number input can
- * submit - and (int) "1e2" is 1, silently mis-clamping. Reject those to $default.
+ * $default when the value is not a plain decimal or is out of range. Only decimal
+ * digits (optionally signed, optionally with a fractional part that is then
+ * truncated) are accepted; is_numeric() would also pass scientific notation like
+ * "1e2" - which a number input can submit - and (int) "1e2" is 1, silently
+ * mis-clamping. Reject those to $default.
  */
 function wap_cfg_clamp_int(mixed $v, int $min, int $max, int $default): int
 {
@@ -55,45 +51,27 @@ function wap_cfg_clamp_int(mixed $v, int $min, int $max, int $default): int
 }
 
 /**
- * Build the flash .cfg body from posted form fields. Only the fields the
- * settings form actually posts are emitted; every other engine default is left
- * to rc.preloadd's cfg_get fallbacks. The output is a well-formed KEY="value"
- * file safe for both the ini parser and cfg_get.
+ * Normalize the settings fields in $post IN PLACE so /update.php writes a clean,
+ * bounded .cfg. Only the fields the form posts are touched; every other engine
+ * default is left to rc.preloadd's cfg_get fallbacks. Numeric fields are clamped
+ * to their valid ranges; string fields are sanitized; SERVER_TYPE is constrained
+ * to the only adapter shipping in Phase 2 so a spoofed value cannot select an
+ * unsupported server.
  *
- * @param array<string, mixed> $post the raw $_POST (or an equivalent map)
+ * @param array<string, mixed> $post the request map (typically $_POST), mutated in place
  */
-function wap_render_cfg(array $post): string
+function wap_sanitize_settings_post(array &$post): void
 {
-    // SERVER_TYPE is constrained to the only adapter shipping in Phase 2; a
-    // spoofed value can never select an unsupported server.
-    $serverType = wap_cfg_sanitize_str((string) ($post['SERVER_TYPE'] ?? 'emby'));
-    if ($serverType !== 'emby') {
-        $serverType = 'emby';
-    }
+    // Only the Emby adapter ships in Phase 2, so pin it regardless of input.
+    $post['SERVER_TYPE'] = 'emby';
 
-    $serverUrl = wap_cfg_sanitize_str((string) ($post['SERVER_URL'] ?? ''));
-    if ($serverUrl === '') {
-        $serverUrl = 'http://localhost:8096';
-    }
+    $url = wap_cfg_sanitize_str((string) ($post['SERVER_URL'] ?? ''));
+    $post['SERVER_URL'] = ($url === '') ? 'http://localhost:8096' : $url;
 
-    $users    = wap_cfg_sanitize_str((string) ($post['USERS'] ?? ''));
-    $pathMaps = wap_cfg_sanitize_str((string) ($post['PATH_MAPS'] ?? ''));
+    $post['USERS']     = wap_cfg_sanitize_str((string) ($post['USERS'] ?? ''));
+    $post['PATH_MAPS'] = wap_cfg_sanitize_str((string) ($post['PATH_MAPS'] ?? ''));
 
-    $ram      = wap_cfg_clamp_int($post['RAM_PERCENT'] ?? null, 1, 100, 50);
-    $target   = wap_cfg_clamp_int($post['TARGET_SECONDS'] ?? null, 1, 86400, 20);
-    $interval = wap_cfg_clamp_int($post['CRON_INTERVAL'] ?? null, 1, 59, 15);
-
-    $lines = [
-        '# GENERATED by the Watch-Aware Preloader settings page. Edit in the',
-        '# webGui (Settings -> Watch-Aware Preloader); rewritten on every save.',
-        \sprintf('SERVER_TYPE="%s"', $serverType),
-        \sprintf('SERVER_URL="%s"', $serverUrl),
-        \sprintf('USERS="%s"', $users),
-        \sprintf('RAM_PERCENT="%d"', $ram),
-        \sprintf('TARGET_SECONDS="%d"', $target),
-        \sprintf('PATH_MAPS="%s"', $pathMaps),
-        \sprintf('CRON_INTERVAL="%d"', $interval),
-    ];
-
-    return implode("\n", $lines) . "\n";
+    $post['RAM_PERCENT']    = (string) wap_cfg_clamp_int($post['RAM_PERCENT'] ?? null, 1, 100, 50);
+    $post['TARGET_SECONDS'] = (string) wap_cfg_clamp_int($post['TARGET_SECONDS'] ?? null, 1, 86400, 20);
+    $post['CRON_INTERVAL']  = (string) wap_cfg_clamp_int($post['CRON_INTERVAL'] ?? null, 1, 59, 15);
 }
