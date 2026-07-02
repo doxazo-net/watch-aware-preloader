@@ -69,8 +69,20 @@ echoing the API key:
 
 - `preloadd list-users` -> `[{ "id", "name" }]` (Emby `/Users`).
 - `preloadd list-libraries` -> `[{ "id", "name" }]` (Emby `/Library/VirtualFolders`).
-- `preloadd detect-pathmaps` -> `[{ "from", "to", "source" }]` where `source` is
-  `docker` or `share-convention` (see section 6).
+- `preloadd detect-pathmaps` (implemented) -> an object
+  `{ "rules": [{ "from", "to", "source" }], "unraid_unc_fallback": true }` where
+  `source` is `manual` (from the configured `path_map`) or `docker` (from
+  `docker inspect`). The `unraid_unc_fallback` boolean reports that the
+  host-agnostic UNC / share-name convention (section 6.2) is applied at
+  map time in addition to the listed rules; it is not enumerated per-rule
+  because it applies to any `\\host\Share` path, not a fixed prefix. `rules`
+  is always a JSON array (`[]` when empty), never `null`. The subcommand reads
+  the config path from its own `-config` flag (default `config.toml`), so
+  `preloadd detect-pathmaps -config <path>` honors the same flag as the run
+  modes; a missing/invalid config is non-fatal and yields docker-only rules
+  (a warning goes to stderr, keeping stdout valid JSON). Precedence at map
+  time is manual rules -> docker rules (longest matching prefix) -> UNC/share
+  convention (section 6.3).
 
 The `.page` PHP calls these (as it already calls `rc.preloadd render`), parses the
 JSON, and renders the pickers / read-only auto-map table. These commands reuse the

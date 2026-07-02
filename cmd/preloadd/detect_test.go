@@ -35,3 +35,23 @@ func TestRunDetectPathmapsJSON(t *testing.T) {
 		t.Errorf("unexpected rules: %+v", out.Rules)
 	}
 }
+
+func TestConfigPathFromArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"default", nil, "config.toml"},
+		{"space form", []string{"-config", "/boot/config/plugins/wap/config.toml"}, "/boot/config/plugins/wap/config.toml"},
+		{"equals form", []string{"-config=/etc/wap.toml"}, "/etc/wap.toml"},
+		{"unknown trailing flag does not abort", []string{"-config", "/tmp/c.toml", "-bogus"}, "/tmp/c.toml"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := configPathFromArgs(c.args); got != c.want {
+				t.Errorf("configPathFromArgs(%v) = %q, want %q", c.args, got, c.want)
+			}
+		})
+	}
+}

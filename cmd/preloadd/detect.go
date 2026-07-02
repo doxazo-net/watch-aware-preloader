@@ -3,11 +3,25 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"io"
 
 	"github.com/sydlexius/watch-aware-preloader/internal/config"
 	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
 )
+
+// configPathFromArgs resolves the -config value from the detect-pathmaps
+// subcommand args (everything after "detect-pathmaps"), matching the -config
+// flag the normal run modes accept. Defaults to "config.toml". Parsing is
+// lenient (ContinueOnError, output discarded) so an unrecognized flag never
+// aborts a read-only diagnostic invocation.
+func configPathFromArgs(args []string) string {
+	fs := flag.NewFlagSet("detect-pathmaps", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfgPath := fs.String("config", "config.toml", "path to config file")
+	_ = fs.Parse(args)
+	return *cfgPath
+}
 
 type ruleJSON struct {
 	From   string `json:"from"`

@@ -48,7 +48,7 @@ func selectMode(once, daemon, verify bool) (string, error) {
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "detect-pathmaps" {
 		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-		cfg, err := config.Load("config.toml")
+		cfg, err := config.Load(configPathFromArgs(os.Args[2:]))
 		var manual []config.PathRule
 		if err != nil {
 			log.Warn("config load failed; reporting docker-only rules", "err", err)
