@@ -1,16 +1,21 @@
 <?xml version='1.0' standalone='yes'?>
 <!DOCTYPE PLUGIN>
 
-<!-- name= is the DISPLAY name only; it is decoupled from the kebab identifier
-     (watch-aware-preloader) used for every path, package, and rc.preloadd's
-     hardcoded PLUGIN. Needs live validation that Unraid's internal plugins/$name/
-     resolution tolerates the friendly name. -->
+<!-- name= is the kebab IDENTIFIER, not a display label. Unraid's plugin manager
+     seeds the status-cell DOM id from it (ShowPlugins.php: str_replace('.','-',name),
+     which does NOT strip spaces) and resolves plugins/$name/ paths (icon, README)
+     from it. A whitespace-free identifier is REQUIRED: a spaced name yields an id
+     like "sid-Watch-Aware Preloader" that the client jQuery $('#'+id) reads as a
+     descendant combinator, so the version-check spinner never resolves. The friendly
+     "Watch-Aware Preloader" label is supplied separately by the packaged README.md
+     (ShowPlugins.php renders plugins/$name/README.md as the Plugins-tab description,
+     falling back to the bold name only when absent). -->
 <!-- icon="hdd-o": hdd-o is the valid FontAwesome-4 hard-drive class Unraid
      ships. Solid fa-hdd is FA5+ and absent from Unraid's FA css, so it would
      render empty (leaving the Plugins-inventory row with no clickable webUI
      link). -->
 <PLUGIN
-  name="Watch-Aware Preloader"
+  name="watch-aware-preloader"
   author="sydlexius"
   version="{{ env['PLUGIN_VERSION'] }}"
   pluginURL="https://github.com/sydlexius/watch-aware-preloader/releases/latest/download/watch-aware-preloader.plg"
