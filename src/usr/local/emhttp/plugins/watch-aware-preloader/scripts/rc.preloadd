@@ -295,7 +295,8 @@ run_now() {
     # The webGui runs this inline in the /update.php progress frame, so a wedged
     # sweep would hang the request forever. Bound it with a generous timeout when
     # coreutils timeout is available; on expiry the sweep is killed and we return
-    # non-zero instead of hanging the UI.
+    # non-zero instead of hanging the UI. If timeout is unavailable we refuse to
+    # run an unbounded sweep from the webGui rather than risk hanging the frame.
     local limit=300 rc=0
     if command -v timeout >/dev/null 2>&1; then
         timeout "${limit}" "${BIN}" -once -config "${CONFIG}" || rc=$?
@@ -307,7 +308,8 @@ run_now() {
             return "${rc}"
         fi
     else
-        "${BIN}" -once -config "${CONFIG}"
+        echo "FAIL: timeout command not available; refusing to run an unbounded sweep from the webGui."
+        return 1
     fi
     echo "Done. See the status panel for results."
 }
