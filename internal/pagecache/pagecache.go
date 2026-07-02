@@ -30,26 +30,66 @@ type Methoder interface {
 
 // New returns the platform Cache implementation. probeBytes and threshold tune
 // the read-timing residency probe used on filesystems where mincore is blind
-// (e.g. fuse.shfs); log receives the cold-probe latency diagnostic.
-func New(probeBytes int64, threshold time.Duration, log *slog.Logger) Cache {
+// (e.g. fuse.shfs); probeTimeout is a generous deadline that bounds a single
+// probe read so a wedged FUSE mount cannot stall an entire sweep (0 disables the
+// guard); log receives the cold-probe latency diagnostic.
+func New(probeBytes int64, threshold, probeTimeout time.Duration, log *slog.Logger) Cache {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	return &osCache{
-		probeBytes: probeBytes,
-		threshold:  threshold,
-		log:        log,
-		now:        time.Now,
-		statfs:     defaultStatfs,
+		probeBytes:   probeBytes,
+		threshold:    threshold,
+		probeTimeout: probeTimeout,
+		log:          log,
+		now:          time.Now,
+		statfs:       defaultStatfs,
 	}
 }
 
 type osCache struct {
-	probeBytes int64
-	threshold  time.Duration
-	log        *slog.Logger
-	now        func() time.Time
-	statfs     func(path string) (uint32, error)
+	probeBytes   int64
+	threshold    time.Duration
+	probeTimeout time.Duration
+	log          *slog.Logger
+	now          func() time.Time
+	statfs       func(path string) (uint32, error)
+}
+
+// errProbeTimeout is returned by probeWithTimeout when a probe read exceeds its
+// deadline. Residency is then reported as unknown so the caller continues.
+var errProbeTimeout = errors.New("pagecache: probe timed out")
+
+// probeWithTimeout runs probe in a goroutine and returns its result, or
+// errProbeTimeout if it does not finish within timeout. A timeout <= 0 runs the
+// probe unguarded (the disabled path, reached when config sets a negative
+// timeout; pre-#17 unbounded behavior).
+//
+// Go cannot cancel a blocking Read on a regular file, so on timeout the probe
+// goroutine is LEAKED until its underlying read eventually returns. This is an
+// accepted tradeoff: harmless in one-shot cron mode (the process exits after the
+// sweep) and bounded in --daemon mode (at most one leak per wedged path per
+// sweep). The result channel is buffered (size 1) so the leaked goroutine can
+// always send without blocking, even after this function has returned.
+func probeWithTimeout(timeout time.Duration, probe func() (time.Duration, error)) (time.Duration, error) {
+	if timeout <= 0 {
+		return probe()
+	}
+	type result struct {
+		d   time.Duration
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		d, err := probe()
+		ch <- result{d, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.d, r.err
+	case <-time.After(timeout):
+		return 0, errProbeTimeout
+	}
 }
 
 func (c *osCache) Warm(path string, offset, length int64) error {

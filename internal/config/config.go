@@ -45,6 +45,11 @@ type ScheduleConfig struct {
 type ResidencyConfig struct {
 	ProbeBytes     int64         `toml:"probe_bytes"`     // fixed probe sample size
 	ProbeThreshold time.Duration `toml:"probe_threshold"` // cached iff a probe read returns faster than this
+	// ProbeTimeout is a generous deadline for a single probe read. Unset/0 ->
+	// 30s default. A negative value disables the guard (unbounded, pre-#17
+	// behavior). A positive value must be >= 15s (above the array spin-up
+	// window) so it never aborts a legitimate cold read.
+	ProbeTimeout time.Duration `toml:"probe_timeout"`
 }
 
 // Config is the full preloadd configuration.
@@ -106,6 +111,9 @@ func (c *Config) applyDefaults() {
 	if c.Residency.ProbeThreshold == 0 {
 		c.Residency.ProbeThreshold = 150 * time.Millisecond
 	}
+	if c.Residency.ProbeTimeout == 0 {
+		c.Residency.ProbeTimeout = 30 * time.Second
+	}
 	if c.StatusPath == "" {
 		c.StatusPath = "/var/local/preloadd/status.json"
 	}
@@ -146,6 +154,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Residency.ProbeThreshold <= 0 {
 		return fmt.Errorf("residency.probe_threshold must be > 0, got %v", c.Residency.ProbeThreshold)
+	}
+	if c.Residency.ProbeTimeout > 0 && c.Residency.ProbeTimeout < 15*time.Second {
+		return fmt.Errorf("residency.probe_timeout must be >= 15s (above the array spin-up window) or negative to disable, got %v", c.Residency.ProbeTimeout)
 	}
 	return nil
 }

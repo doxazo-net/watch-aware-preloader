@@ -129,6 +129,37 @@ func TestResidencyDefaults(t *testing.T) {
 	if c.Residency.ProbeThreshold != 150*time.Millisecond {
 		t.Errorf("ProbeThreshold default = %v, want 150ms", c.Residency.ProbeThreshold)
 	}
+	if c.Residency.ProbeTimeout != 30*time.Second {
+		t.Errorf("ProbeTimeout default = %v, want 30s", c.Residency.ProbeTimeout)
+	}
+}
+
+func TestValidateProbeTimeout(t *testing.T) {
+	// A positive value below the 15s floor is rejected (it could abort a
+	// legitimate cold read); a negative value is accepted (disables the guard);
+	// a value >= 15s is accepted.
+	for _, tc := range []struct {
+		name    string
+		timeout time.Duration
+		wantErr bool
+	}{
+		{"positive too small", 5 * time.Second, true},
+		{"negative disables", -1 * time.Second, false},
+		{"at floor", 15 * time.Second, false},
+		{"above floor", 30 * time.Second, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validBase()
+			c.Residency.ProbeTimeout = tc.timeout
+			err := c.Validate()
+			if tc.wantErr && err == nil {
+				t.Errorf("expected validation error for probe_timeout %v", tc.timeout)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error for probe_timeout %v: %v", tc.timeout, err)
+			}
+		})
+	}
 }
 
 func TestResidencyDecodesDurationString(t *testing.T) {
@@ -155,6 +186,39 @@ probe_threshold = "200ms"
 	}
 	if c.Residency.ProbeThreshold != 200*time.Millisecond {
 		t.Errorf("ProbeThreshold = %v, want 200ms", c.Residency.ProbeThreshold)
+	}
+}
+
+func TestLoadProbeTimeout(t *testing.T) {
+	const head = `
+[server]
+type = "emby"
+url = "http://localhost:8096"
+
+[residency]
+`
+	for _, tc := range []struct {
+		name string
+		body string // extra line(s) under [residency]
+		want time.Duration
+	}{
+		{"explicit 20s", `probe_timeout = "20s"`, 20 * time.Second},
+		{"unset defaults to 30s", ``, 30 * time.Second},
+		{"negative disables", `probe_timeout = "-1s"`, -1 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(p, []byte(head+tc.body+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := Load(p)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if c.Residency.ProbeTimeout != tc.want {
+				t.Errorf("ProbeTimeout = %v, want %v", c.Residency.ProbeTimeout, tc.want)
+			}
+		})
 	}
 }
 

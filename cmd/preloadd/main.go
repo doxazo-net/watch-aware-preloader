@@ -90,7 +90,7 @@ func main() {
 		MaxHeadBytes:  cfg.Preload.MaxHeadMB << 20,
 		TailBytes:     cfg.Preload.TailMB << 20,
 	}
-	pre := preloader.New(preCfg, pagecache.New(cfg.Residency.ProbeBytes, cfg.Residency.ProbeThreshold, log), pathmap.New(rules), preloader.DefaultFS(), log)
+	pre := preloader.New(preCfg, pagecache.New(cfg.Residency.ProbeBytes, cfg.Residency.ProbeThreshold, cfg.Residency.ProbeTimeout, log), pathmap.New(rules), preloader.DefaultFS(), log)
 
 	d := app.NewDaemon(cfg, client, pre, log)
 
@@ -102,7 +102,7 @@ func main() {
 			log.Error("verify sweep failed", "err", verifyErr)
 			os.Exit(1)
 		}
-		mean, known := app.ReportResidency(pagecache.New(cfg.Residency.ProbeBytes, cfg.Residency.ProbeThreshold, log), stats.Warmed, log)
+		mean, known := app.ReportResidency(pagecache.New(cfg.Residency.ProbeBytes, cfg.Residency.ProbeThreshold, cfg.Residency.ProbeTimeout, log), stats.Warmed, log)
 		if known {
 			log.Info("verify complete", "mean_resident_pct", mean, "preloaded", stats.Preloaded, "skipped", stats.Skipped, "missing", stats.Missing)
 		} else {
