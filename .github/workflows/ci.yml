@@ -92,6 +92,18 @@ jobs:
           else
             echo "no PHP files under plugin/ or src/ yet - skipping PHP lint"
           fi
+      - name: PHP unit tests (test/*_test.php)
+        run: |
+          shopt -s nullglob
+          found=0
+          for t in test/*_test.php; do
+            found=1
+            echo "== $t =="
+            php "$t"
+          done
+          [ "$found" -eq 1 ] || echo "no PHP test scripts yet - skipping"
+      - name: rc.preloadd render test (PHP -> bash .cfg contract)
+        run: bash test/rc_preloadd_render_test.sh
 
   shellcheck:
     name: ShellCheck
