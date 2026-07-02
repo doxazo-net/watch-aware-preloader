@@ -8,7 +8,7 @@ RC="${REPO_ROOT}/src/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.p
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
 assert_contains() { grep -qF -- "$2" "$1" || fail "expected '$2' in $1:\n$(cat "$1")"; }
-assert_not_contains() { grep -qF -- "$2" "$1" && fail "did not expect '$2' in $1" || true; }
+assert_not_contains() { if grep -qF -- "$2" "$1"; then fail "did not expect '$2' in $1"; fi; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
