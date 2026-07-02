@@ -64,6 +64,15 @@ func TestUnmappablePathExcluded(t *testing.T) {
 	}
 }
 
+func TestNilToHostAllowsAll(t *testing.T) {
+	// A caller that forgets to thread the mapper must not panic; scoping simply
+	// cannot be applied, so allow all.
+	s := New(libs, []string{"111"}, nil)
+	if !s.Allowed(`\\host\Movies\x.mkv`) {
+		t.Error("a nil toHost must fall back to allow-all, not panic")
+	}
+}
+
 func TestSelectionWithNoMappableLocationFallsBackToAll(t *testing.T) {
 	// enabledIDs matches a library, but its Location never maps -> allow all
 	// rather than warm nothing.

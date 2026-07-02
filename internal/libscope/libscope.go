@@ -36,7 +36,9 @@ type Scope struct {
 // "all libraries" - Allowed then always returns true, preserving the unscoped
 // default. Locations that do not map through toHost are skipped.
 func New(libraries []Library, enabledIDs []string, toHost ToHost) *Scope {
-	if len(enabledIDs) == 0 {
+	// No selection, or no mapper to normalize paths with: scoping cannot be
+	// applied, so allow all rather than panic on a nil toHost or warm nothing.
+	if len(enabledIDs) == 0 || toHost == nil {
 		return &Scope{allowAll: true}
 	}
 	want := make(map[string]bool, len(enabledIDs))
