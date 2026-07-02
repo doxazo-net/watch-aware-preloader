@@ -46,19 +46,9 @@ func selectMode(once, daemon, verify bool) (string, error) {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "detect-pathmaps" {
-		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-		cfg, err := config.Load(configPathFromArgs(os.Args[2:]))
-		var manual []config.PathRule
-		if err != nil {
-			log.Warn("config load failed; reporting docker-only rules", "err", err)
-		} else {
-			manual = cfg.PathMap
-		}
-		if err := runDetectPathmaps(context.Background(), manual, execRunner, os.Stdout); err != nil {
-			log.Error("detect-pathmaps failed", "err", err)
-			os.Exit(1)
-		}
+	// Read-only diagnostic subcommands (list-users, list-libraries,
+	// detect-pathmaps) short-circuit the daemon flag flow.
+	if dispatchSubcommand(os.Args) {
 		return
 	}
 

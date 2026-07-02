@@ -11,6 +11,36 @@ import (
 	"time"
 )
 
+func TestLibraries(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Library/VirtualFolders" {
+			t.Errorf("path = %q, want /Library/VirtualFolders", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`[
+			{"Name":"Movies","ItemId":"111","CollectionType":"movies"},
+			{"Name":"Music","ItemId":"222","CollectionType":null}
+		]`))
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL, "k", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	libs, err := c.Libraries(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(libs) != 2 {
+		t.Fatalf("got %d libraries, want 2", len(libs))
+	}
+	if libs[0].ID != "111" || libs[0].Name != "Movies" || libs[0].Type != "movies" {
+		t.Errorf("libs[0] = %+v, want {111 Movies movies}", libs[0])
+	}
+	if libs[1].Type != "" {
+		t.Errorf("null CollectionType should decode to empty string, got %q", libs[1].Type)
+	}
+}
+
 func TestRecentlyAddedQueryParams(t *testing.T) {
 	// Latest must request flattened, video-only leaf items, else it returns
 	// MusicAlbum/Series containers with no warmable media.

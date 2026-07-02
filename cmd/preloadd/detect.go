@@ -3,24 +3,52 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"io"
+	"log/slog"
+	"os"
+	"strings"
 
 	"github.com/sydlexius/watch-aware-preloader/internal/config"
 	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
 )
 
-// configPathFromArgs resolves the -config value from the detect-pathmaps
-// subcommand args (everything after "detect-pathmaps"), matching the -config
-// flag the normal run modes accept. Defaults to "config.toml". Parsing is
-// lenient (ContinueOnError, output discarded) so an unrecognized flag never
-// aborts a read-only diagnostic invocation.
+// runDetectSubcommand emits the effective path rules as JSON. Read-only and
+// non-fatal on config errors so the UI can show docker-only rules pre-config.
+func runDetectSubcommand(cfgPath string) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	cfg, err := config.Load(cfgPath)
+	var manual []config.PathRule
+	if err != nil {
+		log.Warn("config load failed; reporting docker-only rules", "err", err)
+	} else {
+		manual = cfg.PathMap
+	}
+	if err := runDetectPathmaps(context.Background(), manual, execRunner, os.Stdout); err != nil {
+		log.Error("detect-pathmaps failed", "err", err)
+		os.Exit(1)
+	}
+}
+
+// configPathFromArgs resolves the -config value from a subcommand's args
+// (everything after the subcommand name), matching the -config flag the normal
+// run modes accept. It scans for -config / --config (space or = form) anywhere
+// in args, so an unrelated or unknown flag in any position never causes the
+// value to be missed. Defaults to "config.toml".
 func configPathFromArgs(args []string) string {
-	fs := flag.NewFlagSet("detect-pathmaps", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	cfgPath := fs.String("config", "config.toml", "path to config file")
-	_ = fs.Parse(args)
-	return *cfgPath
+	const def = "config.toml"
+	for i, a := range args {
+		switch {
+		case a == "-config" || a == "--config":
+			if i+1 < len(args) {
+				return args[i+1]
+			}
+		case strings.HasPrefix(a, "-config="):
+			return strings.TrimPrefix(a, "-config=")
+		case strings.HasPrefix(a, "--config="):
+			return strings.TrimPrefix(a, "--config=")
+		}
+	}
+	return def
 }
 
 type ruleJSON struct {
