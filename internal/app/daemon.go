@@ -14,7 +14,7 @@ import (
 // RunOnce performs one full pipeline pass: collect, rank, preload. When
 // enabledLibraries is non-empty, candidates are scoped to those libraries.
 func RunOnce(ctx context.Context, p Provider, enabled, enabledLibraries []string, pre *preloader.Preloader, budget int64, log *slog.Logger) (preloader.RunStats, error) {
-	cands, playing, err := CollectCandidates(ctx, p, enabled, enabledLibraries, pre.ToHost)
+	cands, playing, err := CollectCandidates(ctx, p, enabled, enabledLibraries, pre.ToHost, log)
 	if err != nil {
 		return preloader.RunStats{}, err
 	}

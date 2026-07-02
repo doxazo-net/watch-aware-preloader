@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/sydlexius/watch-aware-preloader/internal/core"
 	"github.com/sydlexius/watch-aware-preloader/internal/libscope"
@@ -50,7 +51,7 @@ func ResolveUserIDs(users []emby.User, enabled []string) []string {
 // mapper) normalizes item paths and library locations to a common host-path
 // namespace for the comparison. An empty enabledLibraries leaves candidates
 // unfiltered (all libraries).
-func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibraries []string, toHost libscope.ToHost) ([]scorer.Candidate, map[string]bool, error) {
+func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibraries []string, toHost libscope.ToHost, log *slog.Logger) ([]scorer.Candidate, map[string]bool, error) {
 	users, err := p.Users(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -91,20 +92,26 @@ func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibrarie
 		if err != nil {
 			return nil, nil, err
 		}
-		cands = filterByLibraries(cands, libs, enabledLibraries, toHost)
+		cands = filterByLibraries(cands, libs, enabledLibraries, toHost, log)
 	}
 	return cands, playing, nil
 }
 
 // filterByLibraries keeps only candidates whose item falls under one of the
 // enabled libraries, using toHost to normalize item paths and library locations
-// to a common host-path namespace.
-func filterByLibraries(cands []scorer.Candidate, libs []emby.Library, enabledLibraries []string, toHost libscope.ToHost) []scorer.Candidate {
+// to a common host-path namespace. When the requested scope cannot be applied
+// (a bad library ID, or paths that do not map), it logs a warning and warms all
+// libraries rather than failing silently.
+func filterByLibraries(cands []scorer.Candidate, libs []emby.Library, enabledLibraries []string, toHost libscope.ToHost, log *slog.Logger) []scorer.Candidate {
 	scopeLibs := make([]libscope.Library, len(libs))
 	for i, l := range libs {
 		scopeLibs[i] = libscope.Library{ID: l.ID, Locations: l.Locations}
 	}
-	scope := libscope.New(scopeLibs, enabledLibraries, toHost)
+	scope, fellBack := libscope.New(scopeLibs, enabledLibraries, toHost)
+	if fellBack && log != nil {
+		log.Warn("library scope requested but no selected library resolved to a host path; warming all libraries",
+			"enabled_libraries", enabledLibraries)
+	}
 	filtered := make([]scorer.Candidate, 0, len(cands))
 	for _, c := range cands {
 		if scope.Allowed(c.Item.ServerPath) {

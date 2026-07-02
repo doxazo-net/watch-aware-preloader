@@ -2,11 +2,15 @@ package app
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/sydlexius/watch-aware-preloader/internal/core"
 	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
 )
+
+func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 type stubProvider struct {
 	users     []emby.User
@@ -58,7 +62,7 @@ func TestCollectCandidatesTiersAndPlaying(t *testing.T) {
 		latest:  map[string][]core.MediaItem{"1": {{ID: "l1"}}},
 		playing: map[string]bool{"x": true},
 	}
-	cands, playing, err := CollectCandidates(context.Background(), p, nil, nil, nil)
+	cands, playing, err := CollectCandidates(context.Background(), p, nil, nil, nil, discardLog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +111,7 @@ func TestCollectCandidatesLibraryScope(t *testing.T) {
 		}
 		return "", false
 	}
-	cands, _, err := CollectCandidates(context.Background(), p, nil, []string{"m"}, toHost)
+	cands, _, err := CollectCandidates(context.Background(), p, nil, []string{"m"}, toHost, discardLog())
 	if err != nil {
 		t.Fatal(err)
 	}

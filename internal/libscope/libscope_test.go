@@ -31,14 +31,20 @@ var libs = []Library{
 }
 
 func TestEmptyEnabledAllowsAll(t *testing.T) {
-	s := New(libs, nil, fakeToHost)
+	s, fellBack := New(libs, nil, fakeToHost)
 	if !s.Allowed(`\\host\Anything\x.mkv`) {
 		t.Error("empty enabledIDs must allow all items")
+	}
+	if fellBack {
+		t.Error("no selection requested is not a fallback")
 	}
 }
 
 func TestScopedToSelectedLibrary(t *testing.T) {
-	s := New(libs, []string{"111"}, fakeToHost)
+	s, fellBack := New(libs, []string{"111"}, fakeToHost)
+	if fellBack {
+		t.Error("a resolvable selection must not report a fallback")
+	}
 	cases := []struct {
 		path string
 		want bool
@@ -58,7 +64,7 @@ func TestScopedToSelectedLibrary(t *testing.T) {
 }
 
 func TestUnmappablePathExcluded(t *testing.T) {
-	s := New(libs, []string{"111"}, fakeToHost)
+	s, _ := New(libs, []string{"111"}, fakeToHost)
 	if s.Allowed("/some/foreign/path.mkv") {
 		t.Error("an item whose path cannot be mapped must be excluded from a scoped sweep")
 	}
@@ -66,19 +72,25 @@ func TestUnmappablePathExcluded(t *testing.T) {
 
 func TestNilToHostAllowsAll(t *testing.T) {
 	// A caller that forgets to thread the mapper must not panic; scoping simply
-	// cannot be applied, so allow all.
-	s := New(libs, []string{"111"}, nil)
+	// cannot be applied, so allow all - and report the fallback.
+	s, fellBack := New(libs, []string{"111"}, nil)
 	if !s.Allowed(`\\host\Movies\x.mkv`) {
 		t.Error("a nil toHost must fall back to allow-all, not panic")
+	}
+	if !fellBack {
+		t.Error("a nil toHost with a non-empty selection must report a fallback")
 	}
 }
 
 func TestSelectionWithNoMappableLocationFallsBackToAll(t *testing.T) {
 	// enabledIDs matches a library, but its Location never maps -> allow all
-	// rather than warm nothing.
+	// rather than warm nothing, and report the fallback so the caller can warn.
 	unmappable := []Library{{ID: "999", Locations: []string{"/foreign/root"}}}
-	s := New(unmappable, []string{"999"}, fakeToHost)
+	s, fellBack := New(unmappable, []string{"999"}, fakeToHost)
 	if !s.Allowed(`\\host\Movies\x.mkv`) {
 		t.Error("a selection that yields no usable prefix must fall back to allow-all")
+	}
+	if !fellBack {
+		t.Error("a selection that yields no usable prefix must report a fallback")
 	}
 }

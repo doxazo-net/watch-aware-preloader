@@ -35,11 +35,19 @@ type Scope struct {
 // enabledIDs (or one that matches no library with a mappable Location) means
 // "all libraries" - Allowed then always returns true, preserving the unscoped
 // default. Locations that do not map through toHost are skipped.
-func New(libraries []Library, enabledIDs []string, toHost ToHost) *Scope {
-	// No selection, or no mapper to normalize paths with: scoping cannot be
-	// applied, so allow all rather than panic on a nil toHost or warm nothing.
-	if len(enabledIDs) == 0 || toHost == nil {
-		return &Scope{allowAll: true}
+//
+// The second return value, fellBack, is true when a non-empty selection could
+// NOT be applied (a nil mapper, or no selected library resolved to a usable
+// prefix - e.g. a typo'd or deleted library ID) and New defaulted to allow-all.
+// The caller should surface that so the operator knows their scope was ignored
+// rather than silently warming every library. It is false when scoping was
+// applied or when no selection was requested.
+func New(libraries []Library, enabledIDs []string, toHost ToHost) (*Scope, bool) {
+	if len(enabledIDs) == 0 {
+		return &Scope{allowAll: true}, false // no scoping requested
+	}
+	if toHost == nil {
+		return &Scope{allowAll: true}, true // requested, but no mapper to apply it
 	}
 	want := make(map[string]bool, len(enabledIDs))
 	for _, id := range enabledIDs {
@@ -58,11 +66,11 @@ func New(libraries []Library, enabledIDs []string, toHost ToHost) *Scope {
 	}
 	// No selected library yielded a usable prefix (e.g. IDs matched nothing, or
 	// no Location mapped): fall back to allow-all rather than silently warming
-	// nothing.
+	// nothing, and report the fallback.
 	if len(prefixes) == 0 {
-		return &Scope{allowAll: true}
+		return &Scope{allowAll: true}, true
 	}
-	return &Scope{toHost: toHost, hostPrefixes: prefixes}
+	return &Scope{toHost: toHost, hostPrefixes: prefixes}, false
 }
 
 // Allowed reports whether itemServerPath falls under a selected library. An item
