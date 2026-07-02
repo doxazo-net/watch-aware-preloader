@@ -5,6 +5,10 @@
      (watch-aware-preloader) used for every path, package, and rc.preloadd's
      hardcoded PLUGIN. Needs live validation that Unraid's internal plugins/$name/
      resolution tolerates the friendly name. -->
+<!-- icon="hdd-o": hdd-o is the valid FontAwesome-4 hard-drive class Unraid
+     ships. Solid fa-hdd is FA5+ and absent from Unraid's FA css, so it would
+     render empty (leaving the Plugins-inventory row with no clickable webUI
+     link). -->
 <PLUGIN
   name="Watch-Aware Preloader"
   author="sydlexius"
@@ -13,7 +17,7 @@
   launch="Settings/WatchAwarePreloader"
   support="https://github.com/sydlexius/watch-aware-preloader"
   min="7.0.0"
-  icon="hdd"
+  icon="hdd-o"
 >
 
 <CHANGES>

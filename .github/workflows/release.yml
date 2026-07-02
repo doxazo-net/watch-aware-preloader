@@ -2,8 +2,13 @@ name: Release Unraid Plugin
 
 # Cut a release by pushing a letter-free version tag (Slackware requires no
 # letters in the version):
-#   YYYY.MM.DD     -> stable release
-#   YYYY.MM.DD.N   -> prerelease build (for install-testing)
+#   YYYY.MM.DD     -> release
+#   YYYY.MM.DD.N   -> test/iteration build (for install-testing)
+#
+# Every tag now publishes as a full GitHub "latest" release (none is marked
+# prerelease). GitHub excludes prereleases from releases/latest, so the Unraid
+# update check that fetches releases/latest/download/watch-aware-preloader.plg
+# only resolves when the newest release is a full/latest release.
 #
 # The job builds the noarch .txz, renders the .plg from plugin/plugin.j2, and
 # publishes them as release assets. It creates the release as a DRAFT, uploads
@@ -127,18 +132,12 @@ jobs:
             echo "Refusing: tag '${PLUGIN_VERSION}' is not a numeric dotted version (YYYY.MM.DD or YYYY.MM.DD.N)." >&2
             exit 1
           fi
-          segments="$(printf '%s' "${PLUGIN_VERSION}" | awk -F. '{print NF}')"
-          prerelease_flag=""
-          if [ "${segments}" -ge 4 ]; then
-            prerelease_flag="--prerelease"
-          fi
           # Draft first so the assets attach while the release is still mutable;
           # publishing the draft then freezes it with the assets in place.
           gh release create "${PLUGIN_VERSION}" \
             --draft \
-            ${prerelease_flag} \
             --title "${PLUGIN_VERSION}" \
-            --notes "Automated release ${PLUGIN_VERSION}. Install or update from the stable URL: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/watch-aware-preloader.plg" \
+            --notes "Automated release ${PLUGIN_VERSION}. Install or update from the latest-release URL: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/watch-aware-preloader.plg" \
             "release/${{ steps.pkg.outputs.txz }}" \
             "release/${{ steps.pkg.outputs.txz }}.sha256" \
             "release/watch-aware-preloader.plg"
