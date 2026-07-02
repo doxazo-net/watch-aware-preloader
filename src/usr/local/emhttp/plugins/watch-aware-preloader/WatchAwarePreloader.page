@@ -1,0 +1,174 @@
+Menu="OtherSettings"
+Title="Watch-Aware Preloader"
+Icon="hdd"
+Markdown="false"
+---
+<?php
+
+/*
+ * Watch-Aware Preloader settings + status page. MIT-licensed.
+ * Reads the engine's status.json (read-only) and, in Task 4, renders the
+ * settings form. No secrets are ever rendered here.
+ */
+
+$docroot = $docroot ?? ($_SERVER['DOCUMENT_ROOT'] ?? '/usr/local/emhttp');
+require_once "{$docroot}/plugins/watch-aware-preloader/include/status.php";
+
+$wapStatusPath = '/var/local/preloadd/status.json';
+$wapStatus     = wap_read_status($wapStatusPath);
+
+$wapCfg = \function_exists('parse_plugin_cfg') ? parse_plugin_cfg('watch-aware-preloader') : [];
+$wapCsrf = $var['csrf_token'] ?? '';
+require_once "{$docroot}/plugins/watch-aware-preloader/include/secrets.php";
+$wapKeySet = wap_api_key_is_set('/boot/config/plugins/watch-aware-preloader/secrets.toml');
+?>
+
+<table class="tablesorter shift ups">
+<thead><tr><th>Watch-Aware Preloader - settings</th></tr></thead>
+</table>
+
+<form markdown="false" name="wap_settings" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#file" value="watch-aware-preloader/watch-aware-preloader.cfg">
+<input type="hidden" name="#command" value="/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd">
+<input type="hidden" name="#arg[1]" value="render">
+<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
+
+<dl>
+    <dt>Server type</dt>
+    <dd>
+        <select name="SERVER_TYPE" size="1">
+            <option value="emby"<?= (($wapCfg['SERVER_TYPE'] ?? 'emby') === 'emby') ? ' selected' : '' ?>>Emby</option>
+        </select>
+    </dd>
+</dl>
+<blockquote class="inline_help">Jellyfin support arrives in Phase 3.</blockquote>
+
+<dl>
+    <dt>Server URL</dt>
+    <dd><input type="text" name="SERVER_URL" value="<?= htmlspecialchars((string) ($wapCfg['SERVER_URL'] ?? 'http://localhost:8096')) ?>"></dd>
+</dl>
+<blockquote class="inline_help">Base URL of your Emby server, e.g. http://tower:8096</blockquote>
+
+<dl>
+    <dt>Users</dt>
+    <dd><input type="text" name="USERS" value="<?= htmlspecialchars((string) ($wapCfg['USERS'] ?? '')) ?>"></dd>
+</dl>
+<blockquote class="inline_help">Comma-separated user names to preload for. Leave empty to include all users.</blockquote>
+
+<dl>
+    <dt>RAM budget (percent)</dt>
+    <dd><input type="number" name="RAM_PERCENT" min="1" max="100" step="1" value="<?= (int) ($wapCfg['RAM_PERCENT'] ?? 50) ?>"></dd>
+</dl>
+<blockquote class="inline_help">Share of available RAM used as the preload budget.</blockquote>
+
+<dl>
+    <dt>Target seconds</dt>
+    <dd><input type="number" name="TARGET_SECONDS" min="1" step="1" value="<?= (int) ($wapCfg['TARGET_SECONDS'] ?? 20) ?>"></dd>
+</dl>
+<blockquote class="inline_help">Seconds of playback to keep warm (covers disk spin-up).</blockquote>
+
+<dl>
+    <dt>Path maps</dt>
+    <dd><input type="text" name="PATH_MAPS" value="<?= htmlspecialchars((string) ($wapCfg['PATH_MAPS'] ?? '/share=>/mnt/user')) ?>"></dd>
+</dl>
+<blockquote class="inline_help">Map server paths to host paths as from=&gt;to pairs, separated by semicolons, e.g. /share=&gt;/mnt/user; /media=&gt;/mnt/user/media</blockquote>
+
+<dl>
+    <dt>Schedule interval (minutes)</dt>
+    <dd><input type="number" name="CRON_INTERVAL" min="1" max="59" step="1" value="<?= (int) ($wapCfg['CRON_INTERVAL'] ?? 15) ?>"></dd>
+</dl>
+<blockquote class="inline_help">How often the cron one-shot runs.</blockquote>
+
+<dl>
+    <dt><strong>Save</strong></dt>
+    <dd><span><input type="submit" value="Apply"></span></dd>
+</dl>
+</form>
+
+<form markdown="false" method="POST" action="/plugins/watch-aware-preloader/include/save-secret.php" target="progressFrame">
+<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
+<dl>
+    <dt>API key <?= $wapKeySet ? '(currently: set)' : '(currently: not set)' ?></dt>
+    <dd><input type="password" name="api_key" autocomplete="new-password" placeholder="<?= $wapKeySet ? 'leave blank to keep, or enter a new key' : 'paste your Emby API key' ?>"></dd>
+</dl>
+<blockquote class="inline_help">Stored in secrets.toml, never in the settings file and never shown here. Saving an empty value clears the key.</blockquote>
+<dl>
+    <dt><strong>Save API key</strong></dt>
+    <dd><span><input type="submit" value="Save API key"></span></dd>
+</dl>
+</form>
+
+<form markdown="false" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#command" value="/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd">
+<input type="hidden" name="#arg[1]" value="test">
+<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
+<dl>
+    <dt><strong>Test connection</strong></dt>
+    <dd><span><input type="submit" value="Test connection"></span></dd>
+</dl>
+</form>
+
+<form markdown="false" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#command" value="/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd">
+<input type="hidden" name="#arg[1]" value="run-now">
+<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
+<dl>
+    <dt><strong>Run now</strong></dt>
+    <dd><span><input type="submit" value="Run now"></span></dd>
+</dl>
+</form>
+
+<table class="tablesorter shift ups">
+<thead><tr><th>Watch-Aware Preloader - last run</th></tr></thead>
+</table>
+
+<?php if ($wapStatus === null) { ?>
+<p>No run recorded yet. The preloader runs on a schedule; check back after the next run, or use <strong>Run now</strong> once settings are saved.</p>
+<?php } else { ?>
+<dl>
+    <dt>Last run</dt>
+    <dd><?= htmlspecialchars(wap_format_pacific((string) ($wapStatus['last_run'] ?? ''))) ?></dd>
+
+    <dt>Result</dt>
+    <dd>
+        <?php if (!empty($wapStatus['ok'])) { ?>
+            OK
+        <?php } else { ?>
+            Error: <?= htmlspecialchars((string) ($wapStatus['error'] ?? 'unknown')) ?>
+        <?php } ?>
+        (mode: <?= htmlspecialchars((string) ($wapStatus['mode'] ?? '?')) ?>,
+        <?= (int) ($wapStatus['duration_ms'] ?? 0) ?> ms)
+    </dd>
+
+    <dt>Warmed</dt>
+    <dd>
+        <?= (int) ($wapStatus['preloaded'] ?? 0) ?> preloaded,
+        <?= (int) ($wapStatus['skipped'] ?? 0) ?> skipped,
+        <?= (int) ($wapStatus['missing'] ?? 0) ?> missing;
+        <?= number_format((float) ($wapStatus['bytes_warmed'] ?? 0) / 1048576, 1) ?> MiB
+        of <?= number_format((float) ($wapStatus['budget_bytes'] ?? 0) / 1048576, 1) ?> MiB budget
+    </dd>
+
+    <?php if (!empty($wapStatus['by_tier']) && \is_array($wapStatus['by_tier'])) { ?>
+    <dt>By tier</dt>
+    <dd>
+        <?php $parts = [];
+        foreach ($wapStatus['by_tier'] as $tier => $n) {
+            $parts[] = htmlspecialchars((string) $tier) . ': ' . (int) $n;
+        }
+        echo implode(', ', $parts); ?>
+    </dd>
+    <?php } ?>
+
+    <?php if (!empty($wapStatus['by_user']) && \is_array($wapStatus['by_user'])) { ?>
+    <dt>By user (UserID)</dt>
+    <dd>
+        <?php $parts = [];
+        foreach ($wapStatus['by_user'] as $uid => $n) {
+            $parts[] = htmlspecialchars((string) $uid) . ': ' . (int) $n;
+        }
+        echo implode(', ', $parts); ?>
+    </dd>
+    <?php } ?>
+</dl>
+<?php } ?>

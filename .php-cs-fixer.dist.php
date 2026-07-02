@@ -5,7 +5,7 @@ declare(strict_types=1);
 // Style/auto-format config for the Unraid plugin's PHP settings page.
 // Covers both *.php and Unraid's *.page files under plugin/.
 $finder = (new PhpCsFixer\Finder())
-    ->in(__DIR__ . '/plugin')
+    ->in([__DIR__ . '/plugin', __DIR__ . '/src'])
     ->name('*.php')
     ->name('*.page');
 

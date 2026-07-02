@@ -1,11 +1,16 @@
 <?xml version='1.0' standalone='yes'?>
 <!DOCTYPE PLUGIN>
 
+<!-- name= is the DISPLAY name only; it is decoupled from the kebab identifier
+     (watch-aware-preloader) used for every path, package, and rc.preloadd's
+     hardcoded PLUGIN. Needs live validation that Unraid's internal plugins/$name/
+     resolution tolerates the friendly name. -->
 <PLUGIN
-  name="watch-aware-preloader"
+  name="Watch-Aware Preloader"
   author="sydlexius"
   version="{{ env['PLUGIN_VERSION'] }}"
   pluginURL="https://github.com/sydlexius/watch-aware-preloader/releases/latest/download/watch-aware-preloader.plg"
+  launch="Settings/WatchAwarePreloader"
   support="https://github.com/sydlexius/watch-aware-preloader"
   min="7.0.0"
   icon="hdd"

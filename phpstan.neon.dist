@@ -4,6 +4,7 @@ parameters:
     level: 6
     paths:
         - plugin
+        - src
     # Unraid plugin pages are PHP but carry the .page extension; analyse both.
     fileExtensions:
         - php
@@ -11,3 +12,12 @@ parameters:
     # Unraid injects globals (e.g. $_GET, plugin helpers) and DOCROOT-relative
     # includes that PHPStan cannot resolve standalone. Tighten as stubs are added.
     treatPhpDocTypesAsCertain: false
+    # The webGui-globals ignores below only match on the pages that actually use
+    # those globals (added incrementally across the slice); do not fail when a
+    # given pattern matches nothing in the current file set.
+    reportUnmatchedIgnoredErrors: false
+    # Unraid webGui globals/functions ($cfg, $var, parse_plugin_cfg, my_csrf)
+    # are provided at runtime and cannot be resolved standalone.
+    ignoreErrors:
+        - '#^Function parse_plugin_cfg not found\.$#'
+        - '#^Variable \$var might not be defined\.$#'

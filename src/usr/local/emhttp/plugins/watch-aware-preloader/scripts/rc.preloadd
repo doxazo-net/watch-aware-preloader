@@ -1,56 +1,130 @@
 #!/bin/bash
-# rc.preloadd - install/remove lifecycle for the watch-aware-preloader plugin.
-# Called by the .plg INLINE install/remove blocks. Idempotent: the .plg install
-# re-runs at each Unraid boot, so seeding and cron install must be safe to repeat.
+# rc.preloadd - install/remove/render lifecycle for the watch-aware-preloader
+# plugin. Called by the .plg INLINE blocks and by the webGui (/update.php
+# #command). Idempotent: the .plg install re-runs at each Unraid boot, so seeding
+# and rendering must be safe to repeat.
+#
+# Base directories are overridable via WAP_FLASH / WAP_RUNTIME / WAP_STATUS_PATH
+# (and the cron-marker paths via WAP_PLUGIN_LOG_DIR / WAP_PLG_FILE /
+# WAP_UPDATE_CRON) so the render logic is testable off-host; production defaults
+# match the Unraid layout.
 set -euo pipefail
 
 PLUGIN="watch-aware-preloader"
-FLASH="/boot/config/plugins/${PLUGIN}"
-RUNTIME="/usr/local/emhttp/plugins/${PLUGIN}"
+FLASH="${WAP_FLASH:-/boot/config/plugins/${PLUGIN}}"
+RUNTIME="${WAP_RUNTIME:-/usr/local/emhttp/plugins/${PLUGIN}}"
+STATUS_PATH="${WAP_STATUS_PATH:-/var/local/preloadd/status.json}"
 CONFIG="${FLASH}/config.toml"
 SECRETS="${FLASH}/secrets.toml"
+CFG="${FLASH}/${PLUGIN}.cfg"
+DEFAULT_CFG="${RUNTIME}/default.cfg"
 CRON="${FLASH}/${PLUGIN}.cron"
 BIN="${RUNTIME}/preloadd"
-INTERVAL="*/15 * * * *"   # Slice C's UI will make this editable
-PLG_FILE="/boot/config/plugins/${PLUGIN}.plg"
-PLG_MARKER="/var/log/plugins/${PLUGIN}.plg"
-UPDATE_CRON="/usr/local/sbin/update_cron"
+# Cron-collation marker (PRs #24/#25). update_cron only collates a plugin's .cron
+# fragment when /var/log/plugins/<name>.plg is present; see ensure_marker.
+PLUGIN_LOG_DIR="${WAP_PLUGIN_LOG_DIR:-/var/log/plugins}"
+PLG_FILE="${WAP_PLG_FILE:-/boot/config/plugins/${PLUGIN}.plg}"
+PLG_MARKER="${PLUGIN_LOG_DIR}/${PLUGIN}.plg"
+UPDATE_CRON="${WAP_UPDATE_CRON:-/usr/local/sbin/update_cron}"
+
+trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+# cfg_get FILE KEY DEFAULT -> value with surrounding double-quotes stripped, or
+# DEFAULT when the key is absent. Last matching line wins (Unraid appends).
+cfg_get() {
+    local file="$1" key="$2" default="$3" line val
+    line="$(grep -E "^[[:space:]]*${key}=" "$file" 2>/dev/null | tail -n1 || true)"
+    if [ -z "$line" ]; then
+        printf '%s' "$default"
+        return
+    fi
+    val="$(trim "${line#*=}")"
+    val="${val%\"}"
+    val="${val#\"}"
+    printf '%s' "$val"
+}
+
+# toml_escape STR -> STR escaped for a TOML basic (double-quoted) string. Without
+# this, a .cfg value containing " or \ or a control char breaks config.toml and
+# the Go engine (BurntSushi/toml) refuses to parse it - triggerable by ordinary
+# settings-form input. Backslash MUST be escaped first.
+toml_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"    # backslash -> \\   (first)
+    s="${s//\"/\\\"}"    # double quote -> \"
+    s="${s//$'\t'/\\t}"  # tab -> \t
+    s="${s//$'\r'/\\r}"  # carriage return -> \r
+    s="${s//$'\n'/\\n}"  # newline -> \n
+    printf '%s' "$s"
+}
+
+# num_or VALUE DEFAULT -> VALUE if it is a non-negative integer, else DEFAULT.
+# Numeric fields are rendered UNQUOTED, so a non-numeric injected value would be
+# a TOML injection just like an unescaped string; validate rather than escape.
+num_or() {
+    case "$1" in
+        ''|*[!0-9]*) printf '%s' "$2" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+# csv_to_toml_array "a, b" -> ["a", "b"] ; "" -> []
+csv_to_toml_array() {
+    local csv="$1" out="" item
+    local IFS=','
+    read -ra items <<< "$csv"
+    for item in "${items[@]}"; do
+        item="$(trim "$item")"
+        [ -z "$item" ] && continue
+        if [ -n "$out" ]; then out="$out, "; fi
+        out="$out\"$(toml_escape "$item")\""
+    done
+    printf '[%s]' "$out"
+}
+
+# render_path_maps "/a=>/b; /c=>/d" -> repeated [[path_map]] TOML blocks
+render_path_maps() {
+    local spec="$1" pair from to
+    local IFS=';'
+    read -ra pairs <<< "$spec"
+    for pair in "${pairs[@]}"; do
+        pair="$(trim "$pair")"
+        [ -z "$pair" ] && continue
+        case "$pair" in
+            *"=>"*) ;;
+            *) continue ;;
+        esac
+        from="$(trim "${pair%%=>*}")"
+        to="$(trim "${pair#*=>}")"
+        [ -z "$from" ] && continue
+        [ -z "$to" ] && continue
+        printf '\n[[path_map]]\nfrom = "%s"\nto = "%s"\n' "$(toml_escape "$from")" "$(toml_escape "$to")"
+    done
+}
+
+# read_api_key -> EMBY_API_KEY env if set, else [server].api_key from secrets.toml
+read_api_key() {
+    if [ -n "${EMBY_API_KEY:-}" ]; then
+        printf '%s' "$EMBY_API_KEY"
+        return
+    fi
+    [ -f "${SECRETS}" ] || return 0
+    local line val
+    line="$(grep -E '^[[:space:]]*api_key[[:space:]]*=' "${SECRETS}" 2>/dev/null | tail -n1 || true)"
+    [ -z "$line" ] && return 0
+    val="$(trim "${line#*=}")"
+    val="${val%\"}"
+    val="${val#\"}"
+    printf '%s' "$val"
+}
 
 seed() {
     mkdir -p "${FLASH}"
-    if [ ! -f "${CONFIG}" ]; then
-        cat > "${CONFIG}" <<'EOF'
-# Watch-Aware Preloader configuration (seeded by the plugin).
-# The API key is NOT here - it lives in secrets.toml (same folder, 0600) or the
-# EMBY_API_KEY env var. A stray api_key in this file is a hard error at startup.
-# The engine's default secret_path already points at this folder's secrets.toml.
-
-[server]
-type = "emby"
-url = "http://localhost:8096"   # set to your Emby/Jellyfin base URL
-
-[users]
-# User names to preload for. Leave empty to include all users.
-enabled = []
-
-[preload]
-ram_percent = 50      # share of available RAM used as the preload budget
-target_seconds = 20   # seconds of playback to keep warm (covers disk spin-up)
-min_head_mb = 8
-max_head_mb = 250
-tail_mb = 1
-
-# Map media-server paths to host paths. Omit if the server reports host paths.
-[[path_map]]
-from = "/share"
-to = "/mnt/user"
-
-[schedule]
-# Only used in --daemon mode; the cron one-shot uses the plugin's cron interval.
-sweep_seconds = 60
-session_poll_seconds = 5
-EOF
-    fi
     if [ ! -f "${SECRETS}" ]; then
         cat > "${SECRETS}" <<'EOF'
 # Credentials ONLY. Never commit; never put these in config.toml.
@@ -61,8 +135,7 @@ EOF
     # Best-effort tighten to owner-only. NOTE: the default FLASH path is on the
     # FAT32 boot drive, where per-file modes are NOT enforced (mount umask wins),
     # so this is a no-op there - the key's protection is the flash/root-access
-    # boundary, same as every Unraid plugin. chmod DOES apply if secret_path is
-    # pointed at a Linux filesystem.
+    # boundary, same as every Unraid plugin. chmod DOES apply on a Linux fs.
     chmod 600 "${SECRETS}" 2>/dev/null || true
 }
 
@@ -76,7 +149,7 @@ ensure_marker() {
     # basename to locate the cron dir (it never dereferences the target), and the
     # manager later re-points the symlink to the persisted .plg. Verified on
     # Unraid 7.3.1: gating on [ -f PLG_FILE ] left cron uncollated until reboot.
-    mkdir -p /var/log/plugins
+    mkdir -p "${PLUGIN_LOG_DIR}"
     ln -sf "${PLG_FILE}" "${PLG_MARKER}"
 }
 
@@ -88,14 +161,119 @@ run_update_cron() {
     fi
 }
 
-install_cron() {
+render_cron() {
+    local interval="$1"
     mkdir -p "${FLASH}"
     cat > "${CRON}" <<EOF
 # Generated by the watch-aware-preloader plugin
-${INTERVAL} /bin/bash -o pipefail -c '"\$0" -once -config "\$1" 2>&1 | /usr/bin/logger -t watch-aware-preloader' "${BIN}" "${CONFIG}"
+*/${interval} * * * * /bin/bash -o pipefail -c '"\$0" -once -config "\$1" 2>&1 | /usr/bin/logger -t watch-aware-preloader' "${BIN}" "${CONFIG}"
 EOF
     ensure_marker
     run_update_cron
+}
+
+# render: read the flash .cfg (or the shipped default.cfg when absent) and emit
+# config.toml + the cron fragment. This is the single TOML generator.
+render() {
+    mkdir -p "${FLASH}"
+    local src="${CFG}"
+    [ -f "$src" ] || src="${DEFAULT_CFG}"
+
+    local server_type server_url users ram target minh maxh tailmb maps interval
+    server_type="$(cfg_get "$src" SERVER_TYPE emby)"
+    server_url="$(cfg_get "$src" SERVER_URL "http://localhost:8096")"
+    users="$(cfg_get "$src" USERS "")"
+    ram="$(cfg_get "$src" RAM_PERCENT 50)"
+    target="$(cfg_get "$src" TARGET_SECONDS 20)"
+    minh="$(cfg_get "$src" MIN_HEAD_MB 8)"
+    maxh="$(cfg_get "$src" MAX_HEAD_MB 250)"
+    tailmb="$(cfg_get "$src" TAIL_MB 1)"
+    maps="$(cfg_get "$src" PATH_MAPS "")"
+    interval="$(cfg_get "$src" CRON_INTERVAL 15)"
+
+    # Escape string scalars for their TOML basic strings; validate numerics
+    # (rendered unquoted) so neither can inject into config.toml.
+    server_type="$(toml_escape "$server_type")"
+    server_url="$(toml_escape "$server_url")"
+    ram="$(num_or "$ram" 50)"
+    target="$(num_or "$target" 20)"
+    minh="$(num_or "$minh" 8)"
+    maxh="$(num_or "$maxh" 250)"
+    tailmb="$(num_or "$tailmb" 1)"
+    interval="$(num_or "$interval" 15)"
+
+    local users_toml path_map_toml
+    users_toml="$(csv_to_toml_array "$users")"
+    path_map_toml="$(render_path_maps "$maps")"
+
+    umask 077
+    cat > "${CONFIG}" <<EOF
+# GENERATED by rc.preloadd from ${src##*/} - do not hand-edit. Edit settings in
+# the webGui (Settings -> Watch-Aware Preloader) or ${CFG##*/}. Regenerated on
+# every save and every boot.
+status_path = "${STATUS_PATH}"
+secret_path = "${SECRETS}"
+
+[server]
+type = "${server_type}"
+url = "${server_url}"
+
+[users]
+enabled = ${users_toml}
+
+[preload]
+ram_percent = ${ram}
+target_seconds = ${target}
+min_head_mb = ${minh}
+max_head_mb = ${maxh}
+tail_mb = ${tailmb}
+${path_map_toml}
+[schedule]
+sweep_seconds = 60
+session_poll_seconds = 5
+EOF
+
+    render_cron "$interval"
+}
+
+# test_connection: reach the server's public endpoint, then (if a key is set)
+# the authenticated endpoint. Prints a human line for the webGui progress popup.
+test_connection() {
+    local src="${CFG}" url token code
+    [ -f "$src" ] || src="${DEFAULT_CFG}"
+    url="$(cfg_get "$src" SERVER_URL "")"
+    if [ -z "$url" ]; then
+        echo "No server URL configured."
+        return 1
+    fi
+    url="${url%/}"
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${url}/System/Info/Public" || true)"
+    if [ "$code" != "200" ]; then
+        echo "FAIL: ${url} not reachable (HTTP ${code:-none})."
+        return 1
+    fi
+    token="$(read_api_key)"
+    if [ -z "$token" ]; then
+        echo "OK: server reachable at ${url}. No API key set yet."
+        return 0
+    fi
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "X-Emby-Token: ${token}" "${url}/System/Info" || true)"
+    if [ "$code" = "200" ]; then
+        echo "OK: server reachable and API key accepted."
+    else
+        echo "FAIL: server reachable but API key rejected (HTTP ${code})."
+        return 1
+    fi
+}
+
+run_now() {
+    if [ ! -x "${BIN}" ]; then
+        echo "FAIL: ${BIN} not found."
+        return 1
+    fi
+    echo "Running a one-shot sweep..."
+    "${BIN}" -once -config "${CONFIG}"
+    echo "Done. See the status panel for results."
 }
 
 remove_cron() {
@@ -104,9 +282,12 @@ remove_cron() {
 }
 
 case "${1:-}" in
-    install) seed; install_cron ;;
-    update)  install_cron ;;
-    seed)    seed ;;
-    remove)  remove_cron ;;
-    *) echo "usage: rc.preloadd {install|remove|seed|update}" >&2; exit 1 ;;
+    install)  seed; render ;;
+    update)   render ;;
+    render)   render ;;
+    seed)     seed ;;
+    test)     test_connection ;;
+    run-now)  run_now ;;
+    remove)   remove_cron ;;
+    *) echo "usage: rc.preloadd {install|update|render|seed|test|run-now|remove}" >&2; exit 1 ;;
 esac

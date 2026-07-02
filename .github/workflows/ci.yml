@@ -84,11 +84,26 @@ jobs:
           tools: composer
           coverage: none
       - run: composer install --no-interaction --no-progress
-      - name: PHPStan + PHP-CS-Fixer (skips cleanly until plugin/ has PHP)
+      - name: PHPStan + PHP-CS-Fixer (skips cleanly until plugin/ or src/ has PHP)
         run: |
-          if find plugin -type f \( -name '*.php' -o -name '*.page' \) | grep -q .; then
+          if find plugin src -type f \( -name '*.php' -o -name '*.page' \) | grep -q .; then
             vendor/bin/phpstan analyse --no-progress
             vendor/bin/php-cs-fixer fix --dry-run --diff
           else
-            echo "no PHP files under plugin/ yet - skipping PHP lint"
+            echo "no PHP files under plugin/ or src/ yet - skipping PHP lint"
           fi
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run shellcheck on shipped bash
+        run: |
+          files=$(find src -type f -name 'rc.*'; find test -type f -name '*.sh' 2>/dev/null)
+          # shellcheck disable=SC2086  # $files is a space-separated path list; word-splitting is intended.
+          if [ -n "$files" ]; then shellcheck $files; else echo "no shell scripts"; fi

@@ -65,14 +65,22 @@ https://github.com/sydlexius/watch-aware-preloader/releases/download/<version>/w
 
 On install the plugin:
 - extracts the `preloadd` binary to `/usr/local/emhttp/plugins/watch-aware-preloader/`
-- seeds `/boot/config/plugins/watch-aware-preloader/config.toml` (edit the server URL)
-  and `secrets.toml` (put your API key under `[server].api_key`; see the Credentials
-  note above about flash file permissions)
-- installs a cron job running `preloadd -once` every 15 minutes
+- seeds `/boot/config/plugins/watch-aware-preloader/secrets.toml` (see the
+  Credentials note above about flash file permissions) and generates
+  `config.toml` from your settings
+- installs a cron job running `preloadd -once` on the configured interval
 
-Set the server URL in `config.toml` and the API key in `secrets.toml`, and it
-starts warming the cache on the next cron tick. Uninstalling removes the cron job
-and binary but preserves your `config.toml`/`secrets.toml` on the flash drive.
+After install, configure everything from the webGui at
+**Settings -> Watch-Aware Preloader**: set the server URL, users, RAM budget,
+target seconds, path maps, and schedule interval, then paste your API key into
+the write-only API-key field (stored in `secrets.toml`, never shown back). Use
+**Test connection** to verify, and **Run now** to warm immediately. The status
+panel shows the last run (time shown in US Pacific).
+
+`config.toml` is generated from these settings on every save and every boot -
+edit settings in the webGui (or the plugin `.cfg`), not `config.toml` directly.
+Uninstalling removes the cron job and binary but preserves your settings and
+`secrets.toml` on the flash drive.
 
 Releases are tagged with letter-free versions (Slackware requirement), e.g.
 `2026.07.01`.

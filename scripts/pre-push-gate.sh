@@ -15,6 +15,11 @@
 
 set -euo pipefail
 
+# The PHP dev tooling (composer) installs a vendor/ dir at the repo root, which
+# would put Go into vendor mode (there is no Go vendor/modules.txt). Ignore it so
+# the gate works in a polyglot local checkout. No-op when no vendor/ exists.
+export GOFLAGS="${GOFLAGS:--mod=readonly}"
+
 echo "=== gofmt ==="
 UNFORMATTED=$(gofmt -l . 2>/dev/null || true)
 if [ -n "$UNFORMATTED" ]; then
@@ -52,12 +57,12 @@ echo "OK"
 
 echo ""
 echo "=== PHP lint ==="
-if find plugin/ -type f \( -name '*.php' -o -name '*.page' \) 2>/dev/null | grep -q . && [ -x vendor/bin/phpstan ]; then
+if find plugin/ src/ -type f \( -name '*.php' -o -name '*.page' \) 2>/dev/null | grep -q . && [ -x vendor/bin/phpstan ]; then
     vendor/bin/phpstan analyse --no-progress
     vendor/bin/php-cs-fixer fix --dry-run --diff
     echo "OK"
 else
-    echo "SKIP: no PHP files under plugin/ or vendor/bin/phpstan not present"
+    echo "SKIP: no PHP files under plugin/ or src/, or vendor/bin/phpstan not present"
 fi
 
 echo ""
