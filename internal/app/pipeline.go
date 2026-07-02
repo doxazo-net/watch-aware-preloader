@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/sydlexius/watch-aware-preloader/internal/config"
 	"github.com/sydlexius/watch-aware-preloader/internal/core"
 	"github.com/sydlexius/watch-aware-preloader/internal/libscope"
 	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
@@ -20,6 +21,15 @@ type Provider interface {
 	NextUp(ctx context.Context, userID string) ([]core.MediaItem, error)
 	RecentlyAdded(ctx context.Context, userID string) ([]core.MediaItem, error)
 	NowPlayingIDs(ctx context.Context) (map[string]bool, error)
+}
+
+// capItems returns at most limit items (in the server's order, which is
+// relevance-ordered per tier). limit <= 0 means no cap.
+func capItems(items []core.MediaItem, limit int) []core.MediaItem {
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
 }
 
 // ResolveUserIDs maps configured user names to IDs. An empty enabled list
@@ -45,13 +55,14 @@ func ResolveUserIDs(users []emby.User, enabled []string) []string {
 	return ids
 }
 
-// CollectCandidates fetches tiers 1-3 for each enabled user plus the global
-// now-playing set. When enabledLibraries is non-empty, candidates are filtered
-// to items that fall under one of those libraries; toHost (the preloader's path
-// mapper) normalizes item paths and library locations to a common host-path
-// namespace for the comparison. An empty enabledLibraries leaves candidates
-// unfiltered (all libraries).
-func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibraries []string, toHost libscope.ToHost, log *slog.Logger) ([]scorer.Candidate, map[string]bool, error) {
+// CollectCandidates fetches the enabled signal tiers for each enabled user plus
+// the global now-playing set. The tiers dials skip a disabled tier entirely (no
+// fetch) and cap each tier's per-user contribution to MaxItems (0 = no cap).
+// When enabledLibraries is non-empty, candidates are filtered to items that fall
+// under one of those libraries; toHost (the preloader's path mapper) normalizes
+// item paths and library locations to a common host-path namespace for the
+// comparison. An empty enabledLibraries leaves candidates unfiltered.
+func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibraries []string, tiers config.TiersConfig, toHost libscope.ToHost, log *slog.Logger) ([]scorer.Candidate, map[string]bool, error) {
 	users, err := p.Users(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -62,29 +73,33 @@ func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibrarie
 	}
 
 	var cands []scorer.Candidate
-	add := func(items []core.MediaItem, tier core.Tier) {
-		for _, it := range items {
+	add := func(items []core.MediaItem, dial config.TierDial, tier core.Tier) {
+		for _, it := range capItems(items, dial.MaxItems) {
 			cands = append(cands, scorer.Candidate{Item: it, Tier: tier})
 		}
 	}
 	for _, id := range ResolveUserIDs(users, enabled) {
-		resume, err := p.Resume(ctx, id)
-		if err != nil {
-			return nil, nil, err
+		if tiers.Resume.Enabled {
+			resume, err := p.Resume(ctx, id)
+			if err != nil {
+				return nil, nil, err
+			}
+			add(resume, tiers.Resume, core.TierResume)
 		}
-		add(resume, core.TierResume)
-
-		nextUp, err := p.NextUp(ctx, id)
-		if err != nil {
-			return nil, nil, err
+		if tiers.NextUp.Enabled {
+			nextUp, err := p.NextUp(ctx, id)
+			if err != nil {
+				return nil, nil, err
+			}
+			add(nextUp, tiers.NextUp, core.TierNextUp)
 		}
-		add(nextUp, core.TierNextUp)
-
-		latest, err := p.RecentlyAdded(ctx, id)
-		if err != nil {
-			return nil, nil, err
+		if tiers.RecentlyAdded.Enabled {
+			latest, err := p.RecentlyAdded(ctx, id)
+			if err != nil {
+				return nil, nil, err
+			}
+			add(latest, tiers.RecentlyAdded, core.TierRecentlyAdded)
 		}
-		add(latest, core.TierRecentlyAdded)
 	}
 
 	if len(enabledLibraries) > 0 {

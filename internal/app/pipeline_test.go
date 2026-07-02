@@ -6,11 +6,22 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/sydlexius/watch-aware-preloader/internal/config"
 	"github.com/sydlexius/watch-aware-preloader/internal/core"
 	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
 )
 
 func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+// allTiers returns a TiersConfig with every tier enabled and no cap (the
+// applyDefaults result), for tests that call the pipeline directly.
+func allTiers() config.TiersConfig {
+	return config.TiersConfig{
+		Resume:        config.TierDial{Enabled: true},
+		NextUp:        config.TierDial{Enabled: true},
+		RecentlyAdded: config.TierDial{Enabled: true},
+	}
+}
 
 type stubProvider struct {
 	users     []emby.User
@@ -62,7 +73,7 @@ func TestCollectCandidatesTiersAndPlaying(t *testing.T) {
 		latest:  map[string][]core.MediaItem{"1": {{ID: "l1"}}},
 		playing: map[string]bool{"x": true},
 	}
-	cands, playing, err := CollectCandidates(context.Background(), p, nil, nil, nil, discardLog())
+	cands, playing, err := CollectCandidates(context.Background(), p, nil, nil, allTiers(), nil, discardLog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,12 +122,51 @@ func TestCollectCandidatesLibraryScope(t *testing.T) {
 		}
 		return "", false
 	}
-	cands, _, err := CollectCandidates(context.Background(), p, nil, []string{"m"}, toHost, discardLog())
+	cands, _, err := CollectCandidates(context.Background(), p, nil, []string{"m"}, allTiers(), toHost, discardLog())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cands) != 1 || cands[0].Item.ID != "movie" {
 		t.Fatalf("library scope should keep only the Movies item, got %+v", cands)
+	}
+}
+
+func TestCollectCandidatesTierDials(t *testing.T) {
+	p := &stubProvider{
+		users:  []emby.User{{ID: "1", Name: "jesse"}},
+		resume: map[string][]core.MediaItem{"1": {{ID: "r1"}}},
+		nextUp: map[string][]core.MediaItem{"1": {{ID: "n1"}}},
+		latest: map[string][]core.MediaItem{"1": {{ID: "l1"}, {ID: "l2"}, {ID: "l3"}}},
+	}
+	// Disable next-up entirely; cap recently-added to 2; keep resume on.
+	tiers := config.TiersConfig{
+		Resume:        config.TierDial{Enabled: true},
+		NextUp:        config.TierDial{Enabled: false},
+		RecentlyAdded: config.TierDial{Enabled: true, MaxItems: 2},
+	}
+	cands, _, err := CollectCandidates(context.Background(), p, nil, nil, tiers, nil, discardLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]core.Tier{}
+	for _, c := range cands {
+		ids[c.Item.ID] = c.Tier
+	}
+	if _, ok := ids["n1"]; ok {
+		t.Error("disabled next-up tier should contribute no candidates")
+	}
+	if _, ok := ids["r1"]; !ok {
+		t.Error("enabled resume tier should contribute")
+	}
+	// recently-added capped at 2: l1,l2 kept, l3 dropped.
+	if _, ok := ids["l3"]; ok {
+		t.Error("recently-added cap of 2 should drop the third item")
+	}
+	if _, ok := ids["l1"]; !ok {
+		t.Error("recently-added cap of 2 should keep the first item")
+	}
+	if len(cands) != 3 { // r1 + l1 + l2
+		t.Errorf("expected 3 candidates (resume 1 + recently-added 2), got %d", len(cands))
 	}
 }
 

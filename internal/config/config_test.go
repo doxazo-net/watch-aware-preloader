@@ -134,6 +134,34 @@ func TestResidencyDefaults(t *testing.T) {
 	}
 }
 
+func TestTierDefaultsAllEnabled(t *testing.T) {
+	c := &Config{}
+	c.applyDefaults()
+	if !c.Tiers.Resume.Enabled || !c.Tiers.NextUp.Enabled || !c.Tiers.RecentlyAdded.Enabled {
+		t.Errorf("no [tiers] block should enable every tier, got %+v", c.Tiers)
+	}
+	if c.Tiers.RecentlyAdded.MaxItems != 0 {
+		t.Errorf("default MaxItems should be 0 (no cap), got %d", c.Tiers.RecentlyAdded.MaxItems)
+	}
+}
+
+func TestTierExplicitConfigPreserved(t *testing.T) {
+	// An operator who configures any dial opts into explicit control: the
+	// all-enabled default must NOT clobber their choices.
+	c := &Config{Tiers: TiersConfig{
+		Resume:        TierDial{Enabled: true, MaxItems: 5},
+		NextUp:        TierDial{Enabled: false},
+		RecentlyAdded: TierDial{Enabled: true},
+	}}
+	c.applyDefaults()
+	if c.Tiers.NextUp.Enabled {
+		t.Error("explicitly disabled next-up must stay disabled")
+	}
+	if c.Tiers.Resume.MaxItems != 5 {
+		t.Errorf("explicit resume MaxItems clobbered, got %d", c.Tiers.Resume.MaxItems)
+	}
+}
+
 func TestValidateProbeTimeout(t *testing.T) {
 	// A positive value below the 15s floor is rejected (it could abort a
 	// legitimate cold read); a negative value is accepted (disables the guard);
