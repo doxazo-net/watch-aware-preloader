@@ -104,6 +104,6 @@ jobs:
           persist-credentials: false
       - name: Run shellcheck on shipped bash
         run: |
-          files=$(find src -type f -name 'rc.*'; find test -type f -name '*.sh' 2>/dev/null)
+          files=$(find src -type f -name 'rc.*' 2>/dev/null; find test -type f -name '*.sh' 2>/dev/null)
           # shellcheck disable=SC2086  # $files is a space-separated path list; word-splitting is intended.
           if [ -n "$files" ]; then shellcheck $files; else echo "no shell scripts"; fi

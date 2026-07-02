@@ -9,9 +9,11 @@ declare(strict_types=1);
 
 /**
  * Write [server].api_key to $secretPath, overwriting the file. Creates the
- * parent directory and best-effort tightens the file to 0600.
+ * parent directory and best-effort tightens the file to 0600. Returns true on a
+ * successful write, false if the write failed (e.g. a read-only path) so the
+ * caller can report a real error instead of a false "saved".
  */
-function wap_write_api_key(string $secretPath, string $key): void
+function wap_write_api_key(string $secretPath, string $key): bool
 {
     $dir = \dirname($secretPath);
     if (!is_dir($dir)) {
@@ -36,8 +38,11 @@ function wap_write_api_key(string $secretPath, string $key): void
     $body = "# Credentials ONLY. Never commit; never put these in config.toml.\n"
           . "[server]\n"
           . "api_key = \"{$escaped}\"\n";
-    file_put_contents($secretPath, $body, LOCK_EX);
+    if (@file_put_contents($secretPath, $body, LOCK_EX) === false) {
+        return false;
+    }
     @chmod($secretPath, 0600);
+    return true;
 }
 
 /** True iff secrets.toml has a non-empty [server].api_key. */

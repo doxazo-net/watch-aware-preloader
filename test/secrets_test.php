@@ -42,6 +42,25 @@ check(str_contains($contents, '\\n'), 'newline escaped as \\n');
 check(str_contains($contents, '\\t'), 'tab escaped as \\t');
 check(wap_api_key_is_set($path) === true, 'evil key reported set');
 
+// Write-failure propagation (CR review finding 1): a write to an unwritable
+// location must return false so the caller reports a real error, not "saved".
+// Root ignores mode bits, so skip the case when running as root.
+$isRoot = \function_exists('posix_geteuid')
+    ? (posix_geteuid() === 0)
+    : (trim((string) @shell_exec('id -u')) === '0');
+if ($isRoot) {
+    fwrite(STDOUT, "SKIP: write-failure case (running as root ignores mode bits)\n");
+} else {
+    $roDir = sys_get_temp_dir() . '/wapsec_ro_' . getmypid();
+    @mkdir($roDir, 0700, true);
+    @chmod($roDir, 0500); // read+execute only: creating a subdir/file must fail
+    $roPath = $roDir . '/nope/secrets.toml'; // parent 'nope' cannot be created
+    check(wap_write_api_key($roPath, 'xyz') === false, 'write failure reported on unwritable path');
+    check(!is_file($roPath), 'no file created on failed write');
+    @chmod($roDir, 0700);
+    @rmdir($roDir);
+}
+
 // Overwrite with empty -> reported unset.
 wap_write_api_key($path, '');
 check(wap_api_key_is_set($path) === false, 'empty key reported unset');

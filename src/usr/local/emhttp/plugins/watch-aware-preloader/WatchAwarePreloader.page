@@ -13,14 +13,15 @@ Markdown="false"
 
 $docroot = $docroot ?? ($_SERVER['DOCUMENT_ROOT'] ?? '/usr/local/emhttp');
 require_once "{$docroot}/plugins/watch-aware-preloader/include/status.php";
+require_once "{$docroot}/plugins/watch-aware-preloader/include/paths.php";
 
-$wapStatusPath = '/var/local/preloadd/status.json';
+$wapStatusPath = wap_default_status_path();
 $wapStatus     = wap_read_status($wapStatusPath);
 
 $wapCfg = \function_exists('parse_plugin_cfg') ? parse_plugin_cfg('watch-aware-preloader') : [];
 $wapCsrf = $var['csrf_token'] ?? '';
 require_once "{$docroot}/plugins/watch-aware-preloader/include/secrets.php";
-$wapKeySet = wap_api_key_is_set('/boot/config/plugins/watch-aware-preloader/secrets.toml');
+$wapKeySet = wap_api_key_is_set(wap_default_secret_path());
 ?>
 
 <table class="tablesorter shift ups">
@@ -34,9 +35,9 @@ $wapKeySet = wap_api_key_is_set('/boot/config/plugins/watch-aware-preloader/secr
 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
 
 <dl>
-    <dt>Server type</dt>
+    <dt><label for="wap_server_type">Server type</label></dt>
     <dd>
-        <select name="SERVER_TYPE" size="1">
+        <select id="wap_server_type" name="SERVER_TYPE" size="1">
             <option value="emby"<?= (($wapCfg['SERVER_TYPE'] ?? 'emby') === 'emby') ? ' selected' : '' ?>>Emby</option>
         </select>
     </dd>
@@ -44,38 +45,38 @@ $wapKeySet = wap_api_key_is_set('/boot/config/plugins/watch-aware-preloader/secr
 <blockquote class="inline_help">Jellyfin support arrives in Phase 3.</blockquote>
 
 <dl>
-    <dt>Server URL</dt>
-    <dd><input type="text" name="SERVER_URL" value="<?= htmlspecialchars((string) ($wapCfg['SERVER_URL'] ?? 'http://localhost:8096')) ?>"></dd>
+    <dt><label for="wap_server_url">Server URL</label></dt>
+    <dd><input type="text" id="wap_server_url" name="SERVER_URL" value="<?= htmlspecialchars((string) ($wapCfg['SERVER_URL'] ?? 'http://localhost:8096')) ?>"></dd>
 </dl>
 <blockquote class="inline_help">Base URL of your Emby server, e.g. http://tower:8096</blockquote>
 
 <dl>
-    <dt>Users</dt>
-    <dd><input type="text" name="USERS" value="<?= htmlspecialchars((string) ($wapCfg['USERS'] ?? '')) ?>"></dd>
+    <dt><label for="wap_users">Users</label></dt>
+    <dd><input type="text" id="wap_users" name="USERS" value="<?= htmlspecialchars((string) ($wapCfg['USERS'] ?? '')) ?>"></dd>
 </dl>
 <blockquote class="inline_help">Comma-separated user names to preload for. Leave empty to include all users.</blockquote>
 
 <dl>
-    <dt>RAM budget (percent)</dt>
-    <dd><input type="number" name="RAM_PERCENT" min="1" max="100" step="1" value="<?= (int) ($wapCfg['RAM_PERCENT'] ?? 50) ?>"></dd>
+    <dt><label for="wap_ram_percent">RAM budget (percent)</label></dt>
+    <dd><input type="number" id="wap_ram_percent" name="RAM_PERCENT" min="1" max="100" step="1" value="<?= (int) ($wapCfg['RAM_PERCENT'] ?? 50) ?>"></dd>
 </dl>
 <blockquote class="inline_help">Share of available RAM used as the preload budget.</blockquote>
 
 <dl>
-    <dt>Target seconds</dt>
-    <dd><input type="number" name="TARGET_SECONDS" min="1" step="1" value="<?= (int) ($wapCfg['TARGET_SECONDS'] ?? 20) ?>"></dd>
+    <dt><label for="wap_target_seconds">Target seconds</label></dt>
+    <dd><input type="number" id="wap_target_seconds" name="TARGET_SECONDS" min="1" step="1" value="<?= (int) ($wapCfg['TARGET_SECONDS'] ?? 20) ?>"></dd>
 </dl>
 <blockquote class="inline_help">Seconds of playback to keep warm (covers disk spin-up).</blockquote>
 
 <dl>
-    <dt>Path maps</dt>
-    <dd><input type="text" name="PATH_MAPS" value="<?= htmlspecialchars((string) ($wapCfg['PATH_MAPS'] ?? '/share=>/mnt/user')) ?>"></dd>
+    <dt><label for="wap_path_maps">Path maps</label></dt>
+    <dd><input type="text" id="wap_path_maps" name="PATH_MAPS" value="<?= htmlspecialchars((string) ($wapCfg['PATH_MAPS'] ?? '/share=>/mnt/user')) ?>"></dd>
 </dl>
 <blockquote class="inline_help">Map server paths to host paths as from=&gt;to pairs, separated by semicolons, e.g. /share=&gt;/mnt/user; /media=&gt;/mnt/user/media</blockquote>
 
 <dl>
-    <dt>Schedule interval (minutes)</dt>
-    <dd><input type="number" name="CRON_INTERVAL" min="1" max="59" step="1" value="<?= (int) ($wapCfg['CRON_INTERVAL'] ?? 15) ?>"></dd>
+    <dt><label for="wap_cron_interval">Schedule interval (minutes)</label></dt>
+    <dd><input type="number" id="wap_cron_interval" name="CRON_INTERVAL" min="1" max="59" step="1" value="<?= (int) ($wapCfg['CRON_INTERVAL'] ?? 15) ?>"></dd>
 </dl>
 <blockquote class="inline_help">How often the cron one-shot runs.</blockquote>
 
@@ -88,8 +89,8 @@ $wapKeySet = wap_api_key_is_set('/boot/config/plugins/watch-aware-preloader/secr
 <form markdown="false" method="POST" action="/plugins/watch-aware-preloader/include/save-secret.php" target="progressFrame">
 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
 <dl>
-    <dt>API key <?= $wapKeySet ? '(currently: set)' : '(currently: not set)' ?></dt>
-    <dd><input type="password" name="api_key" autocomplete="new-password" placeholder="<?= $wapKeySet ? 'leave blank to keep, or enter a new key' : 'paste your Emby API key' ?>"></dd>
+    <dt><label for="wap_api_key">API key <?= $wapKeySet ? '(currently: set)' : '(currently: not set)' ?></label></dt>
+    <dd><input type="password" id="wap_api_key" name="api_key" autocomplete="new-password" placeholder="<?= $wapKeySet ? 'leave blank to keep, or enter a new key' : 'paste your Emby API key' ?>"></dd>
 </dl>
 <blockquote class="inline_help">Stored in secrets.toml, never in the settings file and never shown here. Saving an empty value clears the key.</blockquote>
 <dl>

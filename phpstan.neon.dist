@@ -19,5 +19,9 @@ parameters:
     # Unraid webGui globals/functions ($cfg, $var, parse_plugin_cfg, my_csrf)
     # are provided at runtime and cannot be resolved standalone.
     ignoreErrors:
-        - '#^Function parse_plugin_cfg not found\.$#'
-        - '#^Variable \$var might not be defined\.$#'
+        -
+            message: '#^Function parse_plugin_cfg not found\.$#'
+            path: src/usr/local/emhttp/plugins/watch-aware-preloader/WatchAwarePreloader.page
+        -
+            message: '#^Variable \$var might not be defined\.$#'
+            path: src/usr/local/emhttp/plugins/watch-aware-preloader/WatchAwarePreloader.page

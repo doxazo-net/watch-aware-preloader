@@ -55,6 +55,12 @@ cfg_get() {
 # settings-form input. Backslash MUST be escaped first.
 toml_escape() {
     local s="$1"
+    # Strip control chars that are illegal raw in a TOML basic string and have no
+    # dedicated escape here: 0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F. Tab/CR/LF are
+    # KEPT (excluded from the delete set) and escaped below. A trailing sentinel
+    # protects any trailing newline from command-substitution stripping.
+    s="$(LC_ALL=C printf '%sX' "$s" | LC_ALL=C tr -d '\000-\010\013\014\016-\037\177')"
+    s="${s%X}"
     s="${s//\\/\\\\}"    # backslash -> \\   (first)
     s="${s//\"/\\\"}"    # double quote -> \"
     s="${s//$'\t'/\\t}"  # tab -> \t
@@ -71,6 +77,20 @@ num_or() {
         ''|*[!0-9]*) printf '%s' "$2" ;;
         *) printf '%s' "$1" ;;
     esac
+}
+
+# num_min1 VALUE DEFAULT -> VALUE if it is an integer >= 1, else DEFAULT. Use for
+# fields where 0 is invalid: CRON_INTERVAL=0 would render */0 * * * * (an invalid
+# cron step that silently never fires), so a 0 (or non-numeric) must fall back.
+num_min1() {
+    case "$1" in
+        ''|*[!0-9]*) printf '%s' "$2"; return ;;
+    esac
+    if [ "$1" -eq 0 ] 2>/dev/null; then
+        printf '%s' "$2"
+    else
+        printf '%s' "$1"
+    fi
 }
 
 # csv_to_toml_array "a, b" -> ["a", "b"] ; "" -> []
@@ -200,7 +220,7 @@ render() {
     minh="$(num_or "$minh" 8)"
     maxh="$(num_or "$maxh" 250)"
     tailmb="$(num_or "$tailmb" 1)"
-    interval="$(num_or "$interval" 15)"
+    interval="$(num_min1 "$interval" 15)"
 
     local users_toml path_map_toml
     users_toml="$(csv_to_toml_array "$users")"
@@ -272,7 +292,23 @@ run_now() {
         return 1
     fi
     echo "Running a one-shot sweep..."
-    "${BIN}" -once -config "${CONFIG}"
+    # The webGui runs this inline in the /update.php progress frame, so a wedged
+    # sweep would hang the request forever. Bound it with a generous timeout when
+    # coreutils timeout is available; on expiry the sweep is killed and we return
+    # non-zero instead of hanging the UI.
+    local limit=300 rc=0
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "${limit}" "${BIN}" -once -config "${CONFIG}" || rc=$?
+        if [ "${rc}" -eq 124 ]; then
+            echo "FAIL: sweep exceeded ${limit}s and was terminated."
+            return 1
+        elif [ "${rc}" -ne 0 ]; then
+            echo "FAIL: sweep exited with status ${rc}."
+            return "${rc}"
+        fi
+    else
+        "${BIN}" -once -config "${CONFIG}"
+    fi
     echo "Done. See the status panel for results."
 }
 

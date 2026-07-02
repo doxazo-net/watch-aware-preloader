@@ -6,6 +6,7 @@ declare(strict_types=1);
 // Output goes to the webGui progress popup; never echo the key.
 
 require_once __DIR__ . '/secrets.php';
+require_once __DIR__ . '/paths.php';
 
 header('Content-Type: text/plain');
 
@@ -25,7 +26,11 @@ if ($expected === '' || !hash_equals($expected, $provided)) {
 }
 
 $key = (string) ($_POST['api_key'] ?? '');
-$secretPath = '/boot/config/plugins/watch-aware-preloader/secrets.toml';
-wap_write_api_key($secretPath, $key);
+$secretPath = wap_default_secret_path();
+if (!wap_write_api_key($secretPath, $key)) {
+    http_response_code(500);
+    echo "Failed to write the API key: the secrets path is not writable.\n";
+    exit;
+}
 
 echo ($key === '') ? "API key cleared.\n" : "API key saved.\n";

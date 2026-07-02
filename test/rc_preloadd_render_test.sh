@@ -122,4 +122,58 @@ else
     assert_contains "$cfg" 'to = "/mnt\"x"'
 fi
 
+# --- Control-char stripping (CR review finding 2): a stray control char (0x01)
+# in a string field must be STRIPPED so config.toml stays valid TOML. ---
+ctrl=$'\x01'
+{
+    printf 'SERVER_TYPE="emby"\n'
+    printf 'SERVER_URL="http://localhost:8096"\n'
+    printf 'USERS="al%sice, bob"\n' "$ctrl"
+    printf 'RAM_PERCENT="50"\n'
+    printf 'TARGET_SECONDS="20"\n'
+    printf 'MIN_HEAD_MB="8"\n'
+    printf 'MAX_HEAD_MB="250"\n'
+    printf 'TAIL_MB="1"\n'
+    printf 'PATH_MAPS="/sh%sare=>/mnt/user"\n' "$ctrl"
+    printf 'CRON_INTERVAL="15"\n'
+} > "$WAP_FLASH/watch-aware-preloader.cfg"
+rm -f "$cfg"
+bash "$RC" render
+[ -f "$cfg" ] || fail "config.toml not generated (control-char fixture)"
+if python3 -c 'import tomllib' 2>/dev/null; then
+    python3 - "$cfg" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    d = tomllib.load(fh)
+# The 0x01 byte must be gone; the rest of each value survives.
+assert d["users"]["enabled"] == ["alice", "bob"], d["users"]["enabled"]
+assert d["path_map"][0]["from"] == "/share", d["path_map"][0]
+print("  control char stripped, TOML valid (tomllib)")
+PY
+else
+    assert_contains "$cfg" 'enabled = ["alice", "bob"]'
+    assert_contains "$cfg" 'from = "/share"'
+fi
+# The raw control byte must not appear anywhere in the rendered file.
+if LC_ALL=C grep -q "$ctrl" "$cfg"; then fail "control char leaked into config.toml"; fi
+
+# --- CRON_INTERVAL=0 (CR review finding 4): 0 is invalid (*/0 never fires) and
+# must fall back to the default 15, and the rendered step is always >= 1. ---
+cat > "$WAP_FLASH/watch-aware-preloader.cfg" <<'CFG'
+SERVER_TYPE="emby"
+SERVER_URL="http://localhost:8096"
+USERS=""
+RAM_PERCENT="50"
+TARGET_SECONDS="20"
+MIN_HEAD_MB="8"
+MAX_HEAD_MB="250"
+TAIL_MB="1"
+PATH_MAPS=""
+CRON_INTERVAL="0"
+CFG
+rm -f "$cfg" "$cron"
+bash "$RC" render
+assert_contains "$cron" '*/15 * * * *'
+assert_not_contains "$cron" '*/0 '
+
 echo "PASS: rc.preloadd render"
