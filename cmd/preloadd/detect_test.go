@@ -36,6 +36,29 @@ func TestRunDetectPathmapsJSON(t *testing.T) {
 	}
 }
 
+func TestRunDetectPathmapsSurfacesDockerError(t *testing.T) {
+	run := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return nil, context.DeadlineExceeded // real docker failure, not "nothing found"
+	}
+	var buf bytes.Buffer
+	if err := runDetectPathmaps(context.Background(), nil, run, &buf); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Rules       []struct{ From, To, Source string } `json:"rules"`
+		DockerError string                              `json:"docker_error"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if out.DockerError == "" {
+		t.Error("expected docker_error to be reported on a detection failure")
+	}
+	if len(out.Rules) != 0 {
+		t.Errorf("expected no rules on docker failure, got %+v", out.Rules)
+	}
+}
+
 func TestConfigPathFromArgs(t *testing.T) {
 	cases := []struct {
 		name string

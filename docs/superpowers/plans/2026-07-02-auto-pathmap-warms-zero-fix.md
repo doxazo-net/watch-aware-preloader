@@ -668,7 +668,9 @@ In `cmd/preloadd/main.go`, add subcommand dispatch as the FIRST statement in `ma
 ```go
 	if len(os.Args) > 1 && os.Args[1] == "detect-pathmaps" {
 		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-		cfg, err := config.Load("config.toml")
+		// Honor the subcommand's own -config flag (default config.toml) so
+		// `preloadd detect-pathmaps -config <path>` matches the run modes.
+		cfg, err := config.Load(configPathFromArgs(os.Args[2:]))
 		var manual []config.PathRule
 		if err != nil {
 			log.Warn("config load failed; reporting docker-only rules", "err", err)
@@ -683,7 +685,10 @@ In `cmd/preloadd/main.go`, add subcommand dispatch as the FIRST statement in `ma
 	}
 ```
 
-Note: `config.Load` defaults to `config.toml`; `rc.preloadd` invokes this from the plugin working dir where `config.toml` exists. Keep it read-only and non-fatal on config errors so the UI can still show docker rules pre-configuration.
+Note: `configPathFromArgs` parses the subcommand's own `-config` flag (defaulting to
+`config.toml`); `rc.preloadd` invokes this from the plugin working dir where
+`config.toml` exists. Keep it read-only and non-fatal on config errors so the UI can
+still show docker rules pre-configuration.
 
 - [ ] **Step 4: Run tests to verify they pass**
 

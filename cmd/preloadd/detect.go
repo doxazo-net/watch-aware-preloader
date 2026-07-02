@@ -35,12 +35,19 @@ func runDetectPathmaps(ctx context.Context, manual []config.PathRule, run pathma
 	out := struct {
 		Rules             []ruleJSON `json:"rules"`
 		UnraidUNCFallback bool       `json:"unraid_unc_fallback"`
+		DockerError       string     `json:"docker_error,omitempty"`
 	}{UnraidUNCFallback: true, Rules: []ruleJSON{}}
 	for _, r := range manual {
 		out.Rules = append(out.Rules, ruleJSON{From: r.From, To: r.To, Source: "manual"})
 	}
-	dockerRules, err := pathmap.DetectDockerRules(ctx, run, []string{"emby", "jellyfin"})
-	if err == nil {
+	dockerRules, err := pathmap.DetectDockerRules(ctx, run, mediaServerImages)
+	if err != nil {
+		// Surface a real detection failure (docker missing, socket unmounted,
+		// permission denied, timeout) instead of making it indistinguishable
+		// from "no container found" - this subcommand exists to diagnose exactly
+		// that pipeline.
+		out.DockerError = err.Error()
+	} else {
 		for _, r := range dockerRules {
 			out.Rules = append(out.Rules, ruleJSON{From: r.From, To: r.To, Source: "docker"})
 		}
