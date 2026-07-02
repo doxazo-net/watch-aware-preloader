@@ -72,7 +72,7 @@ php-fix: ## Auto-fix PHP style (PHP-CS-Fixer)
 
 .PHONY: php-test
 php-test: ## Run plain-PHP unit tests (test/*_test.php) + the render contract test
-	@for t in test/*_test.php; do echo "== $$t =="; php "$$t" || exit 1; done
+	@for t in test/*_test.php; do [ -e "$$t" ] || continue; echo "== $$t =="; php "$$t" || exit 1; done
 	bash test/rc_preloadd_render_test.sh
 
 .PHONY: shellcheck

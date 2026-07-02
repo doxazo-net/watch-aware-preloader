@@ -31,12 +31,16 @@ function wap_cfg_sanitize_str(string $v): string
 
 /**
  * Coerce a posted numeric field to an int within [$min, $max], falling back to
- * $default when the value is non-numeric or out of range. Rendered unquoted
- * downstream, so a non-numeric value here could otherwise inject into the .cfg.
+ * $default when the value is not a plain decimal or is out of range. The value
+ * is quoted in the .cfg but rc.preloadd renders it UNQUOTED in config.toml, so
+ * it must be a bare integer. Only decimal digits (optionally signed, optionally
+ * with a fractional part that is then truncated) are accepted; is_numeric()
+ * would also pass scientific notation like "1e2" - which a number input can
+ * submit - and (int) "1e2" is 1, silently mis-clamping. Reject those to $default.
  */
 function wap_cfg_clamp_int(mixed $v, int $min, int $max, int $default): int
 {
-    if (!\is_scalar($v) || !is_numeric((string) $v)) {
+    if (!\is_scalar($v) || preg_match('/^\s*-?\d+(?:\.\d+)?\s*$/', (string) $v) !== 1) {
         return $default;
     }
     $n = (int) $v;

@@ -84,6 +84,11 @@ check(wap_cfg_sanitize_str("  trim me  ") === 'trim me', 'sanitize trims');
 check(wap_cfg_clamp_int('50', 1, 100, 10) === 50, 'clamp passes in-range');
 check(wap_cfg_clamp_int('', 1, 100, 10) === 10, 'clamp empty -> default');
 check(wap_cfg_clamp_int('7.9', 1, 100, 10) === 7, 'clamp truncates float');
+// Decimal-only: is_numeric would accept these and (int)-cast to a surprising
+// value, so they must fall back to the default instead of mis-clamping.
+check(wap_cfg_clamp_int('1e2', 1, 100, 10) === 10, 'clamp rejects scientific notation');
+check(wap_cfg_clamp_int('0x10', 1, 100, 10) === 10, 'clamp rejects hex');
+check(wap_cfg_clamp_int('  25  ', 1, 100, 10) === 25, 'clamp tolerates surrounding whitespace');
 
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} failure(s)\n");

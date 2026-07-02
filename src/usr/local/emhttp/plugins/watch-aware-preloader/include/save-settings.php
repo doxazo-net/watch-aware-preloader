@@ -14,15 +14,17 @@ require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/paths.php';
 
 header('Content-Type: text/plain');
-// Buffer the body so http_response_code() stays effective after the first echo:
-// this endpoint prints per-stage progress, and without buffering the first echo
-// would flush headers and make a later 500 a no-op (with a "headers already
-// sent" warning leaking into the progress popup).
+// Buffer the body so http_response_code() stays effective after the first echo.
+// The endpoint emits several status lines before it knows the final outcome;
+// without buffering the first echo would flush headers and make a later 500 a
+// no-op (with a "headers already sent" warning leaking into the popup). The
+// buffer flushes once at request end, so the popup shows the full result at
+// completion rather than streaming it stage by stage.
 ob_start();
 
-// CSRF: re-parse var.ini and compare with hash_equals, identical to
-// save-secret.php. This is independent of the page's $var, so it holds even if
-// the .page include scope did not populate $var['csrf_token'].
+// CSRF: re-parse var.ini and compare the posted token with hash_equals. This is
+// independent of the page's $var, so it holds even if the .page include scope
+// did not populate $var['csrf_token'].
 $expected = '';
 $varIni = '/var/local/emhttp/var.ini';
 if (is_file($varIni)) {
@@ -54,7 +56,9 @@ echo "Settings saved.\n";
 // 2. Apply the API key. Blank keeps the existing key (so repeated settings saves
 // never wipe the credential); the explicit "clear" checkbox removes it.
 $secretPath = wap_default_secret_path();
-$clear = ($_POST['clear_api_key'] ?? '') !== '';
+// Strict match on the checkbox's submitted value so an unexpected client/proxy
+// sending e.g. clear_api_key=0 can never wipe the key by accident.
+$clear = ($_POST['clear_api_key'] ?? '') === '1';
 $key   = (string) ($_POST['api_key'] ?? '');
 if ($clear) {
     if (!wap_write_api_key($secretPath, '')) {
