@@ -94,7 +94,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding config: %w", err)
 	}
-	c.applyDefaults()
+	c.applyDefaults(md.IsDefined("tiers"))
 	for _, key := range md.Undecoded() {
 		if key.String() == "server.api_key" {
 			return nil, fmt.Errorf("server.api_key must not be in config.toml; move it to the secrets file (%s) or the EMBY_API_KEY env var", c.SecretPath)
@@ -106,7 +106,7 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
-func (c *Config) applyDefaults() {
+func (c *Config) applyDefaults(tiersDefined bool) {
 	if c.Preload.RAMPercent == 0 {
 		c.Preload.RAMPercent = 50
 	}
@@ -143,10 +143,11 @@ func (c *Config) applyDefaults() {
 	if c.SecretPath == "" {
 		c.SecretPath = "/boot/config/plugins/watch-aware-preloader/secrets.toml"
 	}
-	// No [tiers] block (zero value): enable every tier with no cap, matching the
-	// pre-dials behavior. An operator who configures any dial opts into explicit
-	// per-tier control.
-	if c.Tiers == (TiersConfig{}) {
+	// No [tiers] block at all: enable every tier with no cap, matching the
+	// pre-dials behavior. tiersDefined comes from the TOML metadata (not the
+	// decoded value) so an operator who explicitly sets enabled=false for tiers
+	// is honored rather than silently re-enabled.
+	if !tiersDefined {
 		c.Tiers = TiersConfig{
 			Resume:        TierDial{Enabled: true},
 			NextUp:        TierDial{Enabled: true},

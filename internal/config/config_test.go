@@ -122,7 +122,7 @@ func TestValidateRejectsNonPositiveIntervals(t *testing.T) {
 
 func TestResidencyDefaults(t *testing.T) {
 	c := &Config{}
-	c.applyDefaults()
+	c.applyDefaults(false)
 	if c.Residency.ProbeBytes != 1<<20 {
 		t.Errorf("ProbeBytes default = %d, want %d", c.Residency.ProbeBytes, 1<<20)
 	}
@@ -136,7 +136,7 @@ func TestResidencyDefaults(t *testing.T) {
 
 func TestTierDefaultsAllEnabled(t *testing.T) {
 	c := &Config{}
-	c.applyDefaults()
+	c.applyDefaults(false)
 	if !c.Tiers.Resume.Enabled || !c.Tiers.NextUp.Enabled || !c.Tiers.RecentlyAdded.Enabled {
 		t.Errorf("no [tiers] block should enable every tier, got %+v", c.Tiers)
 	}
@@ -153,12 +153,55 @@ func TestTierExplicitConfigPreserved(t *testing.T) {
 		NextUp:        TierDial{Enabled: false},
 		RecentlyAdded: TierDial{Enabled: true},
 	}}
-	c.applyDefaults()
+	c.applyDefaults(true) // [tiers] present in the file
 	if c.Tiers.NextUp.Enabled {
 		t.Error("explicitly disabled next-up must stay disabled")
 	}
 	if c.Tiers.Resume.MaxItems != 5 {
 		t.Errorf("explicit resume MaxItems clobbered, got %d", c.Tiers.Resume.MaxItems)
+	}
+}
+
+func TestTierAllDisabledHonoredViaLoad(t *testing.T) {
+	// The case IsDefined fixes: an operator disables every tier. The decoded
+	// TiersConfig is all-zero, but because [tiers] IS defined in the file, the
+	// all-enabled default must NOT clobber it.
+	const body = `
+[server]
+type = "emby"
+url = "http://h:8096"
+[tiers.resume]
+enabled = false
+[tiers.next_up]
+enabled = false
+[tiers.recently_added]
+enabled = false
+`
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Tiers.Resume.Enabled || c.Tiers.NextUp.Enabled || c.Tiers.RecentlyAdded.Enabled {
+		t.Errorf("explicitly disabled tiers must stay disabled, got %+v", c.Tiers)
+	}
+}
+
+func TestTierNoBlockAllEnabledViaLoad(t *testing.T) {
+	// No [tiers] block in the sample config: every tier enabled with no cap.
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(p, []byte(sample), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Tiers.Resume.Enabled || !c.Tiers.NextUp.Enabled || !c.Tiers.RecentlyAdded.Enabled {
+		t.Errorf("no [tiers] block should enable every tier, got %+v", c.Tiers)
 	}
 }
 
