@@ -1,0 +1,12 @@
+[
+  {
+    "Name": "/emby",
+    "Mounts": [
+      {"Type": "bind", "Source": "/mnt/user/Movies", "Destination": "/share/Movies"},
+      {"Type": "bind", "Source": "/mnt/user/TV", "Destination": "/share/TV"},
+      {"Type": "bind", "Source": "/mnt/vms/appdata/emby", "Destination": "/config"},
+      {"Type": "bind", "Source": "/tmp", "Destination": "/tmp"},
+      {"Type": "volume", "Source": "somevol", "Destination": "/vol"}
+    ]
+  }
+]
