@@ -168,9 +168,16 @@ the engine receives today and the container-path locations, and it degrades
 gracefully when `docker inspect` is unavailable (remote media server) because
 Unraid media always lives at `/mnt/user/<Share>`.
 
-**6.3 Resolution order for a given item path:** manual override rule (longest
-prefix) -> docker rule -> share-convention -> unmapped (logged; counts toward the
-existing `missing` stat).
+**6.3 Resolution order for a given item path:** explicit rules first (manual and
+docker rules merged), matched by **longest `from` prefix**; manual rules are
+appended ahead of docker rules, so a manual rule wins over a docker rule of the
+**same** specificity (stable sort tiebreak). A docker rule with a strictly longer
+matching prefix is more specific and wins - the current mapper does not treat
+manual rules as an absolute override tier. If no explicit rule matches, the
+Unraid UNC / share-name convention (6.2) applies; otherwise the path is unmapped
+(logged; counts toward the `missing` stat). (If absolute manual precedence
+regardless of specificity is later required, the mapper would need a source-aware
+two-pass; out of scope here.)
 
 ## 7. Scorer changes (`internal/scorer`)
 
