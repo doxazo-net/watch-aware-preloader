@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/sydlexius/watch-aware-preloader/internal/core"
+	"github.com/sydlexius/watch-aware-preloader/internal/libscope"
 	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
 	"github.com/sydlexius/watch-aware-preloader/internal/scorer"
 )
@@ -13,6 +14,7 @@ import (
 // Provider is the subset of the Emby client the pipeline needs.
 type Provider interface {
 	Users(ctx context.Context) ([]emby.User, error)
+	Libraries(ctx context.Context) ([]emby.Library, error)
 	Resume(ctx context.Context, userID string) ([]core.MediaItem, error)
 	NextUp(ctx context.Context, userID string) ([]core.MediaItem, error)
 	RecentlyAdded(ctx context.Context, userID string) ([]core.MediaItem, error)
@@ -43,8 +45,12 @@ func ResolveUserIDs(users []emby.User, enabled []string) []string {
 }
 
 // CollectCandidates fetches tiers 1-3 for each enabled user plus the global
-// now-playing set.
-func CollectCandidates(ctx context.Context, p Provider, enabled []string) ([]scorer.Candidate, map[string]bool, error) {
+// now-playing set. When enabledLibraries is non-empty, candidates are filtered
+// to items that fall under one of those libraries; toHost (the preloader's path
+// mapper) normalizes item paths and library locations to a common host-path
+// namespace for the comparison. An empty enabledLibraries leaves candidates
+// unfiltered (all libraries).
+func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibraries []string, toHost libscope.ToHost) ([]scorer.Candidate, map[string]bool, error) {
 	users, err := p.Users(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -79,5 +85,31 @@ func CollectCandidates(ctx context.Context, p Provider, enabled []string) ([]sco
 		}
 		add(latest, core.TierRecentlyAdded)
 	}
+
+	if len(enabledLibraries) > 0 {
+		libs, err := p.Libraries(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		cands = filterByLibraries(cands, libs, enabledLibraries, toHost)
+	}
 	return cands, playing, nil
+}
+
+// filterByLibraries keeps only candidates whose item falls under one of the
+// enabled libraries, using toHost to normalize item paths and library locations
+// to a common host-path namespace.
+func filterByLibraries(cands []scorer.Candidate, libs []emby.Library, enabledLibraries []string, toHost libscope.ToHost) []scorer.Candidate {
+	scopeLibs := make([]libscope.Library, len(libs))
+	for i, l := range libs {
+		scopeLibs[i] = libscope.Library{ID: l.ID, Locations: l.Locations}
+	}
+	scope := libscope.New(scopeLibs, enabledLibraries, toHost)
+	filtered := make([]scorer.Candidate, 0, len(cands))
+	for _, c := range cands {
+		if scope.Allowed(c.Item.ServerPath) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
 }

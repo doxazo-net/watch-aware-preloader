@@ -17,9 +17,9 @@ import (
 // mode field). The status write is best-effort: a failure is logged at WARN and
 // never turns a successful warm into a failed run. RunOnce's stats and error are
 // returned unchanged.
-func SweepAndRecord(ctx context.Context, p Provider, enabled []string, pre *preloader.Preloader, budget int64, mode, statusPath string, log *slog.Logger) (preloader.RunStats, error) {
+func SweepAndRecord(ctx context.Context, p Provider, enabled, enabledLibraries []string, pre *preloader.Preloader, budget int64, mode, statusPath string, log *slog.Logger) (preloader.RunStats, error) {
 	start := time.Now()
-	stats, runErr := RunOnce(ctx, p, enabled, pre, budget, log)
+	stats, runErr := RunOnce(ctx, p, enabled, enabledLibraries, pre, budget, log)
 	s := buildStatus(mode, budget, time.Since(start), stats, runErr)
 	if err := status.Write(statusPath, s); err != nil {
 		log.Warn("writing status file failed", "path", statusPath, "err", err)

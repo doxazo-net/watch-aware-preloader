@@ -96,11 +96,14 @@ func (c *Client) Users(ctx context.Context) ([]User, error) {
 
 // Library is a media library (VirtualFolder) the server exposes. ID is the
 // stable ItemId; Type is the Emby CollectionType (movies/tvshows/music/...),
-// empty when the server reports it as null.
+// empty when the server reports it as null. Locations are the library's source
+// folders as the server reports them (used to decide which library an item
+// belongs to, for the library-scope filter).
 type Library struct {
-	ID   string `json:"ItemId"`
-	Name string `json:"Name"`
-	Type string `json:"CollectionType"`
+	ID        string   `json:"ItemId"`
+	Name      string   `json:"Name"`
+	Type      string   `json:"CollectionType"`
+	Locations []string `json:"Locations"`
 }
 
 // Libraries lists the server's media libraries (VirtualFolders).

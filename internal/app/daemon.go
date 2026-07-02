@@ -11,9 +11,10 @@ import (
 	"github.com/sydlexius/watch-aware-preloader/internal/sysinfo"
 )
 
-// RunOnce performs one full pipeline pass: collect, rank, preload.
-func RunOnce(ctx context.Context, p Provider, enabled []string, pre *preloader.Preloader, budget int64, log *slog.Logger) (preloader.RunStats, error) {
-	cands, playing, err := CollectCandidates(ctx, p, enabled)
+// RunOnce performs one full pipeline pass: collect, rank, preload. When
+// enabledLibraries is non-empty, candidates are scoped to those libraries.
+func RunOnce(ctx context.Context, p Provider, enabled, enabledLibraries []string, pre *preloader.Preloader, budget int64, log *slog.Logger) (preloader.RunStats, error) {
+	cands, playing, err := CollectCandidates(ctx, p, enabled, enabledLibraries, pre.ToHost)
 	if err != nil {
 		return preloader.RunStats{}, err
 	}
@@ -52,7 +53,7 @@ func (d *Daemon) budget() int64 {
 }
 
 func (d *Daemon) sweep(ctx context.Context) {
-	if _, err := SweepAndRecord(ctx, d.p, d.cfg.Users.Enabled, d.pre, d.budget(), "daemon", d.cfg.StatusPath, d.log); err != nil {
+	if _, err := SweepAndRecord(ctx, d.p, d.cfg.Users.Enabled, d.cfg.Libraries.Enabled, d.pre, d.budget(), "daemon", d.cfg.StatusPath, d.log); err != nil {
 		d.log.Error("sweep failed", "err", err)
 	}
 }

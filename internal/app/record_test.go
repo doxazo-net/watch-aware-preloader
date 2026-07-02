@@ -76,12 +76,12 @@ func TestSweepAndRecordWriteFailureIsNonFatal(t *testing.T) {
 	}
 	statusPath := filepath.Join(f, "status.json")
 
-	wantStats, wantErr := RunOnce(context.Background(), p, nil, pre, 1<<40, logger)
+	wantStats, wantErr := RunOnce(context.Background(), p, nil, nil, pre, 1<<40, logger)
 	if wantErr != nil {
 		t.Fatalf("baseline RunOnce failed: %v", wantErr)
 	}
 
-	stats, err := SweepAndRecord(context.Background(), p, nil, pre, 1<<40, "once", statusPath, logger)
+	stats, err := SweepAndRecord(context.Background(), p, nil, nil, pre, 1<<40, "once", statusPath, logger)
 	if err != nil {
 		t.Fatalf("SweepAndRecord returned err = %v, want nil (write failure must not surface)", err)
 	}

@@ -70,6 +70,13 @@ func New(cfg Config, cache pagecache.Cache, mapper *pathmap.Mapper, fs FS, log *
 	return &Preloader{cfg: cfg, cache: cache, mapper: mapper, fs: fs, log: log}
 }
 
+// ToHost maps a server-reported path to its host path via the configured path
+// rules, reporting whether it mapped. Exposed so the sweep can reuse the same
+// normalization for the library-scope filter.
+func (p *Preloader) ToHost(serverPath string) (string, bool) {
+	return p.mapper.ToHost(serverPath)
+}
+
 // HeadBytes computes the duration-based head size for an item, clamped.
 func HeadBytes(cfg Config, it core.MediaItem) int64 {
 	bps := it.BitrateBps

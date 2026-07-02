@@ -19,6 +19,11 @@ type UsersConfig struct {
 	Enabled []string `toml:"enabled"` // user names; empty => all users
 }
 
+// LibrariesConfig scopes preloading to specific media libraries.
+type LibrariesConfig struct {
+	Enabled []string `toml:"enabled"` // library IDs; empty => all libraries
+}
+
 // PreloadConfig controls the preload budget and read-ahead sizes.
 type PreloadConfig struct {
 	RAMPercent    int   `toml:"ram_percent"`
@@ -56,6 +61,7 @@ type ResidencyConfig struct {
 type Config struct {
 	Server     ServerConfig    `toml:"server"`
 	Users      UsersConfig     `toml:"users"`
+	Libraries  LibrariesConfig `toml:"libraries"`
 	Preload    PreloadConfig   `toml:"preload"`
 	PathMap    []PathRule      `toml:"path_map"`
 	Schedule   ScheduleConfig  `toml:"schedule"`
