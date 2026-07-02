@@ -3,6 +3,7 @@
 package pagecache
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,13 +28,14 @@ var (
 
 // probePath opens path, seeks to offset, and times a read of up to n bytes.
 //
-// The read intentionally has no deadline: its wall-clock duration IS the
-// residency signal, and a cold read on a spun-down array disk legitimately
-// blocks for the spin-up window (seconds), so any short timeout would abort
-// real cold reads. A genuinely wedged fuse.shfs mount would therefore stall the
-// sweep; that is an accepted limitation (a wedged user-share is a host-level
-// failure, and Go cannot cancel a blocking read on a regular file). A possible
-// generous bounded probe is tracked in issue #17.
+// The read itself has no deadline: its wall-clock duration IS the residency
+// signal, and a cold read on a spun-down array disk legitimately blocks for the
+// spin-up window (seconds), so any short timeout would abort real cold reads.
+// Callers instead bound it with a generous probeWithTimeout (residency.probe_timeout,
+// default 30s, well above the spin-up window): a genuinely wedged fuse.shfs mount
+// then reports residency-unknown instead of stalling the whole sweep. Go cannot
+// cancel a blocking read on a regular file, so a wedged probe leaks its goroutine
+// (see probeWithTimeout); that is an accepted tradeoff.
 func (c *osCache) probePath(path string, offset, n int64) (time.Duration, error) {
 	f, err := os.Open(path) //nolint:gosec // operator-configured media path
 	if err != nil {
@@ -125,8 +127,13 @@ func (c *osCache) residentByTiming(path string, offset, length int64) (int64, bo
 	if n > length {
 		n = length
 	}
-	elapsed, err := c.probePath(path, offset, n)
+	elapsed, err := probeWithTimeout(c.probeTimeout, func() (time.Duration, error) {
+		return c.probePath(path, offset, n)
+	})
 	if err != nil {
+		if errors.Is(err, errProbeTimeout) {
+			c.log.Debug("probe timed out", "path", path, "offset", offset, "timeout", c.probeTimeout)
+		}
 		return 0, false, err
 	}
 	if classifyCached(elapsed, c.threshold) {
