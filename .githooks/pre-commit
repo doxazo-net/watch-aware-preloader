@@ -10,6 +10,11 @@
 
 set -euo pipefail
 
+# The PHP dev tooling (composer) installs a vendor/ dir at the repo root, which
+# would put Go into vendor mode (there is no Go vendor/modules.txt). Ignore it so
+# the hook works in a polyglot local checkout. No-op when no vendor/ exists.
+export GOFLAGS="${GOFLAGS:--mod=readonly}"
+
 # Colors (disabled if not a terminal)
 if [ -t 1 ]; then
     RED='\033[0;31m'

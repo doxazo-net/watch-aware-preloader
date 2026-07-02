@@ -9,6 +9,9 @@ LDFLAGS     := -X main.version=$(VERSION)
 GOLANGCI    := golangci-lint
 COMPOSER    := composer
 
+# Ignore the composer PHP vendor/ dir for Go (see scripts/pre-push-gate.sh). No-op without vendor/.
+export GOFLAGS ?= -mod=readonly
+
 .DEFAULT_GOAL := help
 
 ## ----- Go -----
@@ -56,16 +59,25 @@ php-install: ## Install PHP dev tooling (PHPStan, PHP-CS-Fixer) via Composer
 
 .PHONY: php-lint
 php-lint: ## Static analysis (PHPStan) + style check (PHP-CS-Fixer, dry-run)
-	@if find plugin -type f \( -name '*.php' -o -name '*.page' \) 2>/dev/null | grep -q .; then \
+	@if find plugin src -type f \( -name '*.php' -o -name '*.page' \) 2>/dev/null | grep -q .; then \
 		vendor/bin/phpstan analyse --no-progress ; \
 		vendor/bin/php-cs-fixer fix --dry-run --diff ; \
 	else \
-		echo "no PHP files under plugin/ yet - skipping PHP lint" ; \
+		echo "no PHP files under plugin/ or src/ yet - skipping PHP lint" ; \
 	fi
 
 .PHONY: php-fix
 php-fix: ## Auto-fix PHP style (PHP-CS-Fixer)
 	vendor/bin/php-cs-fixer fix
+
+.PHONY: shellcheck
+shellcheck: ## Lint shipped bash (rc.preloadd + test harnesses)
+	@files=$$(find src -type f -name 'rc.*'; find test -type f -name '*.sh' 2>/dev/null); \
+	if [ -n "$$files" ]; then \
+		shellcheck $$files ; \
+	else \
+		echo "no shell scripts to check yet" ; \
+	fi
 
 ## ----- Hooks -----
 
