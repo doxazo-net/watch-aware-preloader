@@ -32,8 +32,22 @@ $wapKeySet = wap_api_key_is_set(wap_default_secret_path());
 <thead><tr><th>Watch-Aware Preloader - settings</th></tr></thead>
 </table>
 
-<form markdown="false" name="wap_settings" method="POST" action="/plugins/watch-aware-preloader/include/save-settings.php" target="progressFrame">
+<?php
+/*
+ * Save via /update.php, which runs as ROOT - the only context that can write the
+ * 0600-root FAT flash files. In one request it: runs the #include hook
+ * (presave.php: writes secrets.toml and normalizes the settings), then writes the
+ * .cfg from the posted fields (#file), then runs rc.preloadd render (#command).
+ * The API key is posted as #api_key so /update.php excludes it from the .cfg
+ * (fields prefixed with # are not written to the file).
+ */
+?>
+<form markdown="false" name="wap_settings" method="POST" action="/update.php" target="progressFrame">
 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
+<input type="hidden" name="#file" value="watch-aware-preloader/watch-aware-preloader.cfg">
+<input type="hidden" name="#include" value="plugins/watch-aware-preloader/include/presave.php">
+<input type="hidden" name="#command" value="/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd">
+<input type="hidden" name="#arg[1]" value="render">
 
 <dl>
     <dt><label for="wap_server_type">Server type</label></dt>
@@ -83,14 +97,14 @@ $wapKeySet = wap_api_key_is_set(wap_default_secret_path());
 
 <dl>
     <dt><label for="wap_api_key">API key <?= $wapKeySet ? '(currently: set)' : '(currently: not set)' ?></label></dt>
-    <dd><input type="password" id="wap_api_key" name="api_key" autocomplete="new-password" placeholder="<?= $wapKeySet ? 'leave blank to keep the current key' : 'paste your Emby API key' ?>"></dd>
+    <dd><input type="password" id="wap_api_key" name="#api_key" autocomplete="new-password" placeholder="<?= $wapKeySet ? 'leave blank to keep the current key' : 'paste your Emby API key' ?>"></dd>
 </dl>
 <blockquote class="inline_help">Stored in secrets.toml, never in the settings file and never shown here. Leave blank to keep the current key; tick the box below to remove it.</blockquote>
 
 <?php if ($wapKeySet) { ?>
 <dl>
     <dt><label for="wap_clear_api_key">Clear API key</label></dt>
-    <dd><input type="checkbox" id="wap_clear_api_key" name="clear_api_key" value="1"> remove the stored key on save</dd>
+    <dd><input type="checkbox" id="wap_clear_api_key" name="#clear_api_key" value="1"> remove the stored key on save</dd>
 </dl>
 <?php } ?>
 
