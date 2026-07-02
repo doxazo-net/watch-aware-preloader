@@ -68,7 +68,9 @@ func TestConfigPathFromArgs(t *testing.T) {
 		{"default", nil, "config.toml"},
 		{"space form", []string{"-config", "/boot/config/plugins/wap/config.toml"}, "/boot/config/plugins/wap/config.toml"},
 		{"equals form", []string{"-config=/etc/wap.toml"}, "/etc/wap.toml"},
-		{"unknown trailing flag does not abort", []string{"-config", "/tmp/c.toml", "-bogus"}, "/tmp/c.toml"},
+		{"unknown trailing flag ignored", []string{"-config", "/tmp/c.toml", "-bogus"}, "/tmp/c.toml"},
+		{"unknown leading flag ignored", []string{"-bogus", "-config", "/tmp/c.toml"}, "/tmp/c.toml"},
+		{"double-dash form", []string{"--config", "/x.toml"}, "/x.toml"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
