@@ -30,9 +30,12 @@ type Methoder interface {
 
 // New returns the platform Cache implementation. probeBytes and threshold tune
 // the read-timing residency probe used on filesystems where mincore is blind
-// (e.g. fuse.shfs); probeTimeout is a generous deadline that bounds a single
-// probe read so a wedged FUSE mount cannot stall an entire sweep (0 disables the
-// guard); log receives the cold-probe latency diagnostic.
+// (e.g. fuse.shfs); probeTimeout is the already-resolved residency.probe_timeout
+// that bounds a single probe read so a wedged FUSE mount cannot stall an entire
+// sweep. A value <= 0 runs the probe unguarded (no deadline); config supplies a
+// positive value by default (30s) or a negative value to disable the guard, so
+// New never sees a bare 0 meaning "default". log receives the cold-probe latency
+// diagnostic.
 func New(probeBytes int64, threshold, probeTimeout time.Duration, log *slog.Logger) Cache {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -84,10 +87,12 @@ func probeWithTimeout(timeout time.Duration, probe func() (time.Duration, error)
 		d, err := probe()
 		ch <- result{d, err}
 	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case r := <-ch:
 		return r.d, r.err
-	case <-time.After(timeout):
+	case <-timer.C:
 		return 0, errProbeTimeout
 	}
 }
