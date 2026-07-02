@@ -18,3 +18,15 @@ function wap_default_secret_path(): string
 {
     return '/boot/config/plugins/watch-aware-preloader/secrets.toml';
 }
+
+/** Default path the settings flash .cfg lives on. rc.preloadd render reads it. */
+function wap_default_cfg_path(): string
+{
+    return '/boot/config/plugins/watch-aware-preloader/watch-aware-preloader.cfg';
+}
+
+/** Absolute path to the rc.preloadd lifecycle script (sibling scripts/ dir). */
+function wap_rc_script_path(): string
+{
+    return \dirname(__DIR__) . '/scripts/rc.preloadd';
+}

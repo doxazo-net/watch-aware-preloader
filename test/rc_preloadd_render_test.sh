@@ -176,4 +176,33 @@ bash "$RC" render
 assert_contains "$cron" '*/15 * * * *'
 assert_not_contains "$cron" '*/0 '
 
+# --- Endpoint contract (issue #30): the .cfg that the PHP settings serializer
+# (wap_render_cfg) writes must be consumable by render. This crosses the PHP ->
+# bash seam that the old combined /update.php "Apply" form broke. Skip when php
+# is unavailable (e.g. a minimal shell-only CI runner). ---
+if command -v php >/dev/null 2>&1; then
+    settings_php="${REPO_ROOT}/src/usr/local/emhttp/plugins/watch-aware-preloader/include/settings.php"
+    # shellcheck disable=SC2016  # $argv is a PHP variable, intentionally not expanded by the shell.
+    php -r '
+        require $argv[1];
+        echo wap_render_cfg([
+            "SERVER_URL"    => "http://tower:8096",
+            "USERS"         => "carol, dave",
+            "RAM_PERCENT"   => "77",
+            "PATH_MAPS"     => "/library=>/mnt/user/media",
+            "CRON_INTERVAL" => "5",
+        ]);
+    ' "$settings_php" > "$WAP_FLASH/watch-aware-preloader.cfg"
+    rm -f "$cfg" "$cron"
+    bash "$RC" render
+    [ -f "$cfg" ] || fail "config.toml not generated from wap_render_cfg output"
+    assert_contains "$cfg" 'url = "http://tower:8096"'
+    assert_contains "$cfg" 'enabled = ["carol", "dave"]'
+    assert_contains "$cfg" 'ram_percent = 77'
+    assert_contains "$cfg" 'from = "/library"'
+    assert_contains "$cfg" 'to = "/mnt/user/media"'
+    assert_contains "$cron" '*/5 * * * *'
+    echo "  endpoint .cfg -> render contract OK"
+fi
+
 echo "PASS: rc.preloadd render"
