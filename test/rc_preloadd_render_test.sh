@@ -186,9 +186,21 @@ STUB_BIN="$work/preloadd"
 cat > "$STUB_BIN" <<'STUB'
 #!/bin/bash
 case "$1" in
-  list-users)      echo '[{"id":"id-a","name":"Alice"}]' ;;
-  list-libraries)  echo '[{"id":"lib-1","name":"Movies","type":"movies"}]' ;;
-  detect-pathmaps) echo '{"rules":[{"from":"/share/Movies","to":"/mnt/user/Movies","source":"docker"}],"unraid_unc_fallback":true}' ;;
+  list-users)
+    python3 -m json.tool <<'JSON'
+[{"id":"id-a","name":"Alice"}]
+JSON
+    ;;
+  list-libraries)
+    python3 -m json.tool <<'JSON'
+[{"id":"lib-1","name":"Movies","type":"movies"}]
+JSON
+    ;;
+  detect-pathmaps)
+    python3 -m json.tool <<'JSON'
+{"rules":[{"from":"/share/Movies","to":"/mnt/user/Movies","source":"docker"}],"unraid_unc_fallback":true}
+JSON
+    ;;
   *) exit 2 ;;
 esac
 STUB
@@ -196,9 +208,9 @@ chmod +x "$STUB_BIN"
 printf 'SERVER_URL="http://tower:8096"\n' >> "$WAP_FLASH/watch-aware-preloader.cfg"
 WAP_PICKERS_PATH="$work/pickers.json" WAP_BIN="$STUB_BIN" "$RC" write-pickers
 grep -q '"server_url": *"http://tower:8096"' "$work/pickers.json" || fail "server_url not in cache"
-grep -q '"id":"id-a"' "$work/pickers.json" || fail "users not merged"
-grep -q '"id":"lib-1"' "$work/pickers.json" || fail "libraries not merged"
-grep -q '"source":"docker"' "$work/pickers.json" || fail "pathmaps not merged"
+grep -q '"id": "id-a"' "$work/pickers.json" || fail "users not merged"
+grep -q '"id": "lib-1"' "$work/pickers.json" || fail "libraries not merged"
+grep -q '"source": "docker"' "$work/pickers.json" || fail "pathmaps not merged"
 # world-readable
 perms="$(stat -c '%a' "$work/pickers.json" 2>/dev/null || stat -f '%Lp' "$work/pickers.json")"
 [ "$perms" = "644" ] || fail "pickers.json not 0644 (got $perms)"
