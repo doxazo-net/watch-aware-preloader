@@ -55,8 +55,8 @@ function wap_cfg_csv_from_list(mixed $v): string
 }
 
 /**
- * A checkbox posts a value only when checked, so presence (any non-empty scalar)
- * means enabled; absence means disabled. Returns "1" or "0".
+ * A checkbox posts a value only when checked, so a present value other than the
+ * literal "0" means enabled; absence (or a "0") means disabled. Returns "1" or "0".
  *
  * @param mixed $v
  */

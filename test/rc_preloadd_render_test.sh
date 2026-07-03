@@ -190,8 +190,12 @@ bash "$RC" render
 grep -q '^\[tiers.resume\]$'         "$cfg" || fail "missing [tiers.resume]"
 grep -q '^\[tiers.next_up\]$'        "$cfg" || fail "missing [tiers.next_up]"
 grep -q '^\[tiers.recently_added\]$' "$cfg" || fail "missing [tiers.recently_added]"
-grep -q '^enabled = true$'           "$cfg" || fail "tier enabled default not true"
-grep -q '^max_items = 0$'            "$cfg" || fail "tier max_items default not 0"
+# Scope the default assertions to each tier block: an unscoped grep would pass if
+# any single tier had the default even when another did not.
+for t in resume next_up recently_added; do
+    awk -v h="[tiers.$t]" '$0==h{f=1;next} f&&/^enabled = /{print;exit}'   "$cfg" | grep -q 'enabled = true' || fail "tier $t enabled default not true"
+    awk -v h="[tiers.$t]" '$0==h{f=1;next} f&&/^max_items = /{print;exit}' "$cfg" | grep -q 'max_items = 0'   || fail "tier $t max_items default not 0"
+done
 
 # --- tiers: explicit values incl. a disabled tier and a cap ---
 { printf 'TIER_RESUME_ENABLED="1"\nTIER_RESUME_MAX="15"\n'; \

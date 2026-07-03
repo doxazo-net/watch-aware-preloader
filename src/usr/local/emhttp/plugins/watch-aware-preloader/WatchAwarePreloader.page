@@ -142,7 +142,9 @@ $wapTiers = [
     <dt>Signal tiers</dt>
     <dd>
     <?php foreach ($wapTiers as [$wapTk, $wapTlabel]) {
-        $wapTEn  = ($wapCfg["TIER_{$wapTk}_ENABLED"] ?? '1') !== '0';
+        // Match rc.preloadd's cfg_bool truthy set (1/true/yes/on) so the checkbox
+        // reflects exactly what rc render will emit, even for a hand-edited .cfg.
+        $wapTEn  = \in_array(strtolower((string) ($wapCfg["TIER_{$wapTk}_ENABLED"] ?? '1')), ['1', 'true', 'yes', 'on'], true);
         $wapTMax = (int) ($wapCfg["TIER_{$wapTk}_MAX"] ?? 0);
         ?>
         <label style="display:block">
