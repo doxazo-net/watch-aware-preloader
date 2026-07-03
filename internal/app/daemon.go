@@ -12,15 +12,16 @@ import (
 )
 
 // RunOnce performs one full pipeline pass: collect, rank, preload. When
-// enabledLibraries is non-empty, candidates are scoped to those libraries; tiers
-// controls which signal tiers contribute and their per-user caps.
-func RunOnce(ctx context.Context, p Provider, enabled, enabledLibraries []string, tiers config.TiersConfig, pre *preloader.Preloader, budget int64, log *slog.Logger) (preloader.RunStats, error) {
-	cands, playing, err := CollectCandidates(ctx, p, enabled, enabledLibraries, tiers, pre.ToHost, log)
+// opts.EnabledLibraries is non-empty, candidates are scoped to those libraries;
+// opts.Tiers controls which signal tiers contribute and their per-user caps.
+// opts.Mode and opts.StatusPath are unused here (only SweepAndRecord reads them).
+func RunOnce(ctx context.Context, p Provider, pre *preloader.Preloader, opts SweepOptions, log *slog.Logger) (preloader.RunStats, error) {
+	cands, playing, err := CollectCandidates(ctx, p, opts.Enabled, opts.EnabledLibraries, opts.Tiers, pre.ToHost, log)
 	if err != nil {
 		return preloader.RunStats{}, err
 	}
 	targets := scorer.Rank(cands, playing)
-	stats := pre.Run(ctx, targets, budget)
+	stats := pre.Run(ctx, targets, opts.Budget)
 	log.Info("sweep complete",
 		"targets", len(targets), "preloaded", stats.Preloaded,
 		"skipped", stats.Skipped, "missing", stats.Missing,
@@ -54,7 +55,8 @@ func (d *Daemon) budget() int64 {
 }
 
 func (d *Daemon) sweep(ctx context.Context) {
-	if _, err := SweepAndRecord(ctx, d.p, d.cfg.Users.Enabled, d.cfg.Libraries.Enabled, d.cfg.Tiers, d.pre, d.budget(), "daemon", d.cfg.StatusPath, d.log); err != nil {
+	opts := SweepOptionsFromConfig(d.cfg, d.budget(), "daemon")
+	if _, err := SweepAndRecord(ctx, d.p, d.pre, opts, d.log); err != nil {
 		d.log.Error("sweep failed", "err", err)
 	}
 }
