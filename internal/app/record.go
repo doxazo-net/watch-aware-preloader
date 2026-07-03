@@ -6,24 +6,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
 	"github.com/doxazo-net/watch-aware-preloader/internal/status"
 )
 
 // SweepAndRecord runs one sweep via RunOnce, times it, and writes the status
 // file. It is the single sweep entry point for every run mode, so all modes
-// emit status uniformly. mode is the run mode recorded in status.json and is one
-// of "once", "verify", or "daemon" (it is written verbatim to the status file's
+// emit status uniformly. opts.Mode is the run mode recorded in status.json and
+// is one of "once", "verify", or "daemon" (written verbatim to the status file's
 // mode field). The status write is best-effort: a failure is logged at WARN and
 // never turns a successful warm into a failed run. RunOnce's stats and error are
 // returned unchanged.
-func SweepAndRecord(ctx context.Context, p Provider, enabled, enabledLibraries []string, tiers config.TiersConfig, pre *preloader.Preloader, budget int64, mode, statusPath string, log *slog.Logger) (preloader.RunStats, error) {
+func SweepAndRecord(ctx context.Context, p Provider, pre *preloader.Preloader, opts SweepOptions, log *slog.Logger) (preloader.RunStats, error) {
 	start := time.Now()
-	stats, runErr := RunOnce(ctx, p, enabled, enabledLibraries, tiers, pre, budget, log)
-	s := buildStatus(mode, budget, time.Since(start), stats, runErr)
-	if err := status.Write(statusPath, s); err != nil {
-		log.Warn("writing status file failed", "path", statusPath, "err", err)
+	stats, runErr := RunOnce(ctx, p, pre, opts, log)
+	s := buildStatus(opts.Mode, opts.Budget, time.Since(start), stats, runErr)
+	if err := status.Write(opts.StatusPath, s); err != nil {
+		log.Warn("writing status file failed", "path", opts.StatusPath, "err", err)
 	}
 	return stats, runErr
 }

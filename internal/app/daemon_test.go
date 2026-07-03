@@ -31,7 +31,7 @@ func TestRunOnceExcludesNowPlayingEndToEnd(t *testing.T) {
 	cfg := preloader.Config{TargetSeconds: 20, MinHeadBytes: 8 << 20, MaxHeadBytes: 250 << 20, TailBytes: 1 << 20}
 	pre := preloader.New(cfg, stubCache{}, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	stats, err := RunOnce(context.Background(), p, nil, nil, allTiers(), pre, 1<<40, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	stats, err := RunOnce(context.Background(), p, pre, SweepOptions{Tiers: allTiers(), Budget: 1 << 40}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
