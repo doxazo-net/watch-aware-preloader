@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Disable CodeRabbit auto-review to honor the org's manual-reviews-only policy.
+# Manual `@coderabbitai review` still triggers a full review on demand.
+reviews:
+  auto_review:
+    enabled: false
