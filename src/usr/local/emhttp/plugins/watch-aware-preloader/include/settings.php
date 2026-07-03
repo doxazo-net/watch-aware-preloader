@@ -55,6 +55,17 @@ function wap_cfg_csv_from_list(mixed $v): string
 }
 
 /**
+ * A checkbox posts a value only when checked, so presence (any non-empty scalar)
+ * means enabled; absence means disabled. Returns "1" or "0".
+ *
+ * @param mixed $v
+ */
+function wap_cfg_checkbox(mixed $v): string
+{
+    return (\is_scalar($v) && (string) $v !== '' && (string) $v !== '0') ? '1' : '0';
+}
+
+/**
  * Coerce a posted numeric field to an int within [$min, $max], falling back to
  * $default when the value is not a plain decimal or is out of range. Only decimal
  * digits (optionally signed, optionally with a fractional part that is then
@@ -103,4 +114,9 @@ function wap_sanitize_settings_post(array &$post): void
     $post['RAM_PERCENT']    = (string) wap_cfg_clamp_int($post['RAM_PERCENT'] ?? null, 1, 100, 50);
     $post['TARGET_SECONDS'] = (string) wap_cfg_clamp_int($post['TARGET_SECONDS'] ?? null, 1, 86400, 20);
     $post['CRON_INTERVAL']  = (string) wap_cfg_clamp_int($post['CRON_INTERVAL'] ?? null, 1, 59, 15);
+
+    foreach (['RESUME', 'NEXTUP', 'RECENT'] as $t) {
+        $post["TIER_{$t}_ENABLED"] = wap_cfg_checkbox($post["TIER_{$t}_ENABLED"] ?? null);
+        $post["TIER_{$t}_MAX"]     = (string) wap_cfg_clamp_int($post["TIER_{$t}_MAX"] ?? null, 0, 10000, 0);
+    }
 }

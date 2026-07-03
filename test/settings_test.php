@@ -87,6 +87,24 @@ $post2 = [];
 wap_sanitize_settings_post($post2);
 check($post2['LIBRARIES'] === '', 'LIBRARIES defaults empty');
 
+// --- tier dials ---
+$post = [
+    'TIER_RESUME_ENABLED' => '1', 'TIER_RESUME_MAX' => '15',
+    'TIER_NEXTUP_MAX' => '0',                 // NEXTUP_ENABLED absent (unchecked)
+    'TIER_RECENT_ENABLED' => 'on', 'TIER_RECENT_MAX' => '5',
+];
+wap_sanitize_settings_post($post);
+check($post['TIER_RESUME_ENABLED'] === '1', 'resume enabled normalized to 1');
+check($post['TIER_RESUME_MAX'] === '15', 'resume max preserved');
+check($post['TIER_NEXTUP_ENABLED'] === '0', 'absent tier checkbox => 0');
+check($post['TIER_RECENT_ENABLED'] === '1', 'any present checkbox value => 1');
+check($post['TIER_RECENT_MAX'] === '5', 'recent max preserved');
+
+$empty = [];
+wap_sanitize_settings_post($empty);
+check($empty['TIER_RESUME_ENABLED'] === '0', 'all-absent => disabled flag 0');
+check($empty['TIER_RESUME_MAX'] === '0', 'max default 0');
+
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} failure(s)\n");
     exit(1);
