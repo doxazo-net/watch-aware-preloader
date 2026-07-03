@@ -32,8 +32,9 @@ func capItems(items []core.MediaItem, limit int) []core.MediaItem {
 	return items
 }
 
-// ResolveUserIDs maps configured user names to IDs. An empty enabled list
-// selects all users.
+// ResolveUserIDs maps configured user IDs or names to IDs. An entry matches a user
+// by u.ID or u.Name (IDs are GUIDs and names are human strings, so no collision).
+// An empty enabled list selects all users.
 func ResolveUserIDs(users []emby.User, enabled []string) []string {
 	if len(enabled) == 0 {
 		ids := make([]string, 0, len(users))
@@ -48,7 +49,7 @@ func ResolveUserIDs(users []emby.User, enabled []string) []string {
 	}
 	var ids []string
 	for _, u := range users {
-		if want[u.Name] {
+		if want[u.ID] || want[u.Name] {
 			ids = append(ids, u.ID)
 		}
 	}

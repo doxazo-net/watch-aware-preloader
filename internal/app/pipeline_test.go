@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/doxazo-net/watch-aware-preloader/internal/config"
@@ -178,4 +179,30 @@ func replaceBackslash(s string) string {
 		}
 	}
 	return string(b)
+}
+
+func TestResolveUserIDsMatchesIdOrName(t *testing.T) {
+	users := []emby.User{
+		{ID: "id-alice", Name: "Alice"},
+		{ID: "id-bob", Name: "Bob"},
+	}
+	cases := []struct {
+		name    string
+		enabled []string
+		want    []string
+	}{
+		{"by id", []string{"id-alice"}, []string{"id-alice"}},
+		{"by name (legacy)", []string{"Bob"}, []string{"id-bob"}},
+		{"mixed id and name", []string{"id-alice", "Bob"}, []string{"id-alice", "id-bob"}},
+		{"empty means all", nil, []string{"id-alice", "id-bob"}},
+		{"no match yields none", []string{"nobody"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveUserIDs(users, tc.enabled)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("ResolveUserIDs(%v) = %v, want %v", tc.enabled, got, tc.want)
+			}
+		})
+	}
 }
