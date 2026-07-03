@@ -33,6 +33,15 @@ $wapConnected  = wap_pickers_fresh($wapPickers, $wapServerUrl);
 // Current selections (csv of ids, or legacy names) for checkbox state.
 $wapSelUsers   = array_filter(array_map('trim', explode(',', (string) ($wapCfg['USERS'] ?? ''))), static fn (string $s): bool => $s !== '');
 $wapSelLibs    = array_filter(array_map('trim', explode(',', (string) ($wapCfg['LIBRARIES'] ?? ''))), static fn (string $s): bool => $s !== '');
+// Preserve the current selection as a hidden scalar in the gate / empty states:
+// no USERS[]/LIBRARIES[] checkbox is posted there, so presave would normalize the
+// field to "" and silently clear a saved selection on any unrelated save.
+$wapCurUsers   = implode(',', $wapSelUsers);
+$wapCurLibs    = implode(',', $wapSelLibs);
+// Auto-detected path-map rules for the read-only table (hoisted so the inline
+// island below opens directly with the connect-gate check).
+$wapMaps       = wap_picker_pathmaps($wapPickers);
+$wapRules      = (\is_array($wapMaps['rules'] ?? null)) ? $wapMaps['rules'] : [];
 ?>
 
 <table class="tablesorter shift ups">
@@ -77,11 +86,16 @@ $wapSelLibs    = array_filter(array_map('trim', explode(',', (string) ($wapCfg['
     <dd>
     <?php if (!$wapConnected) { ?>
         <em>Connect to a server to choose users: save the Server URL and API key above, then click <strong>Test connection</strong>.</em>
+        <input type="hidden" name="USERS" value="<?= htmlspecialchars($wapCurUsers) ?>">
     <?php } elseif (($wapUsers = wap_picker_users($wapPickers)) === []) { ?>
         <em>The server returned no users.</em>
+        <input type="hidden" name="USERS" value="<?= htmlspecialchars($wapCurUsers) ?>">
     <?php } else {
         foreach ($wapUsers as $u) {
             $id = (string) ($u['id'] ?? '');
+            if ($id === '') {
+                continue; // an entry with no id cannot be persisted (empties are dropped)
+            }
             $nm = (string) ($u['name'] ?? $id);
             $checked = (\in_array($id, $wapSelUsers, true) || \in_array($nm, $wapSelUsers, true)) ? ' checked' : '';
             ?>
@@ -97,11 +111,16 @@ $wapSelLibs    = array_filter(array_map('trim', explode(',', (string) ($wapCfg['
     <dd>
     <?php if (!$wapConnected) { ?>
         <em>Connect to a server to choose libraries.</em>
+        <input type="hidden" name="LIBRARIES" value="<?= htmlspecialchars($wapCurLibs) ?>">
     <?php } elseif (($wapLibs = wap_picker_libraries($wapPickers)) === []) { ?>
         <em>The server returned no libraries.</em>
+        <input type="hidden" name="LIBRARIES" value="<?= htmlspecialchars($wapCurLibs) ?>">
     <?php } else {
         foreach ($wapLibs as $l) {
             $id = (string) ($l['id'] ?? '');
+            if ($id === '') {
+                continue; // an entry with no id cannot be persisted (empties are dropped)
+            }
             $nm = (string) ($l['name'] ?? $id);
             $checked = \in_array($id, $wapSelLibs, true) ? ' checked' : '';
             ?>
@@ -127,10 +146,7 @@ $wapSelLibs    = array_filter(array_map('trim', explode(',', (string) ($wapCfg['
 <dl>
     <dt>Detected path maps</dt>
     <dd>
-    <?php
-        $wapMaps  = wap_picker_pathmaps($wapPickers);
-$wapRules = (\is_array($wapMaps['rules'] ?? null)) ? $wapMaps['rules'] : [];
-if (!$wapConnected) { ?>
+    <?php if (!$wapConnected) { ?>
         <em>Connect and Test connection to auto-detect Docker bind-mount path maps.</em>
     <?php } elseif ($wapRules === []) { ?>
         <em>No explicit path maps detected; the Unraid share-name convention will be used.</em>

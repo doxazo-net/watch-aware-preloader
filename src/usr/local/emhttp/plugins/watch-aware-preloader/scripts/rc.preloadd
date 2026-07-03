@@ -78,6 +78,10 @@ json_escape() {
     local s="$1"
     s="${s//\\/\\\\}"
     s="${s//\"/\\\"}"
+    # Strip raw control chars (0x01-0x1F, 0x7F): unescaped they are invalid inside
+    # a JSON string, and none is legitimate in a URL. presave strips them, but a
+    # hand-edited .cfg may not, so strip here too rather than emit invalid JSON.
+    s="${s//[$'\x01'-$'\x1f'$'\x7f']/}"
     printf '%s' "$s"
 }
 
@@ -321,12 +325,20 @@ write_pickers() {
     maps="$("${BIN}" detect-pathmaps -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: detect-pathmaps failed" >&2; return 1; }
     gen="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     url="$(json_escape "$url")"
-    mkdir -p "$(dirname "${PICKERS}")"
-    tmp="$(mktemp "${PICKERS}.XXXXXX")"
-    printf '{"generated_at":"%s","server_url":"%s","users":%s,"libraries":%s,"pathmaps":%s}\n' \
-        "$gen" "$url" "$users" "$libs" "$maps" > "$tmp"
-    chmod 0644 "$tmp"
-    mv -f "$tmp" "${PICKERS}"
+    # Guard every filesystem op: write_pickers is best-effort (test_connection must
+    # not fail when the cache cannot be written, e.g. a full/readonly /var), so a
+    # failure returns non-zero and cleans up the temp file rather than letting
+    # set -e abort the caller or leaving a partial cache behind.
+    mkdir -p "$(dirname "${PICKERS}")" || { echo "write_pickers: mkdir failed" >&2; return 1; }
+    tmp="$(mktemp "${PICKERS}.XXXXXX")" || { echo "write_pickers: mktemp failed" >&2; return 1; }
+    if ! { printf '{"generated_at":"%s","server_url":"%s","users":%s,"libraries":%s,"pathmaps":%s}\n' \
+        "$gen" "$url" "$users" "$libs" "$maps" > "$tmp" \
+        && chmod 0644 "$tmp" \
+        && mv -f "$tmp" "${PICKERS}"; }; then
+        echo "write_pickers: cache write failed" >&2
+        rm -f "$tmp"
+        return 1
+    fi
 }
 
 run_now() {

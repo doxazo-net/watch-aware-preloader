@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../src/usr/local/emhttp/plugins/watch-aware-preloader/include/settings.php';
+$wapImpl = __DIR__ . '/../src/usr/local/emhttp/plugins/watch-aware-preloader/include/settings.php';
+if (!is_file($wapImpl)) {
+    fwrite(STDERR, "FAIL: implementation not found: {$wapImpl}\n");
+    exit(1);
+}
+require_once $wapImpl;
 
 $failures = 0;
 function check(bool $cond, string $msg): void
@@ -69,6 +74,8 @@ check(wap_cfg_csv_from_list(['id-a', 'id-b']) === 'id-a,id-b', 'array joined to 
 check(wap_cfg_csv_from_list(['id-a', '', ' id-b ']) === 'id-a,id-b', 'array trims and drops empties');
 check(wap_cfg_csv_from_list('legacy,names') === 'legacy,names', 'scalar passes through sanitized');
 check(wap_cfg_csv_from_list(["a\"b", 'c']) === 'ab,c', 'array elements sanitized');
+check(wap_cfg_csv_from_list(['a', ['nested'], 'b']) === 'a,b', 'non-scalar array items skipped');
+check(wap_cfg_csv_from_list(null) === '', 'null yields empty string');
 
 // --- wap_sanitize_settings_post: USERS[]/LIBRARIES[] arrays ---
 $post = ['USERS' => ['id-a', 'id-b'], 'LIBRARIES' => ['lib-1']];

@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../src/usr/local/emhttp/plugins/watch-aware-preloader/include/pickers.php';
+$wapImpl = __DIR__ . '/../src/usr/local/emhttp/plugins/watch-aware-preloader/include/pickers.php';
+if (!is_file($wapImpl)) {
+    fwrite(STDERR, "FAIL: implementation not found: {$wapImpl}\n");
+    exit(1);
+}
+require_once $wapImpl;
 
 $failures = 0;
 function check(bool $cond, string $msg): void
