@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/core"
-	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
-	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
-	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
-	"github.com/sydlexius/watch-aware-preloader/internal/status"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
+	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/status"
 )
 
 func TestBuildStatusMapsFields(t *testing.T) {

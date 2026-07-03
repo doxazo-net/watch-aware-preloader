@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
-	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
-	"github.com/sydlexius/watch-aware-preloader/internal/secrets"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/doxazo-net/watch-aware-preloader/internal/secrets"
 )
 
 // dispatchSubcommand runs a read-only diagnostic subcommand (list-users,

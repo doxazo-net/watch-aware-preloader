@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
-	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
-	"github.com/sydlexius/watch-aware-preloader/internal/scorer"
-	"github.com/sydlexius/watch-aware-preloader/internal/sysinfo"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/scorer"
+	"github.com/doxazo-net/watch-aware-preloader/internal/sysinfo"
 )
 
 // RunOnce performs one full pipeline pass: collect, rank, preload. When

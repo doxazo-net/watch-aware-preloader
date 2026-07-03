@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
 )
 
 func TestWriteUsersJSON(t *testing.T) {

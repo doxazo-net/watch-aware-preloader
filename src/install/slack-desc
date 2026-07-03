@@ -6,6 +6,6 @@ watch-aware-preloader: user is most likely to play next, derived from the media
 watch-aware-preloader: server's own watch state (Emby/Jellyfin), so playback
 watch-aware-preloader: starts instantly instead of waiting for a disk spin-up.
 watch-aware-preloader:
-watch-aware-preloader: https://github.com/sydlexius/watch-aware-preloader
+watch-aware-preloader: https://github.com/doxazo-net/watch-aware-preloader
 watch-aware-preloader:
 watch-aware-preloader:

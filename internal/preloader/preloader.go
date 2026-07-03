@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/core"
-	"github.com/sydlexius/watch-aware-preloader/internal/pagecache"
-	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pagecache"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
 )
 
 // Config controls duration-based sizing and the tail read.

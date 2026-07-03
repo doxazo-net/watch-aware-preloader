@@ -4,7 +4,7 @@ package scorer
 import (
 	"sort"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 )
 
 // Candidate is one item proposed for preloading at a given tier.

@@ -6,11 +6,11 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
-	"github.com/sydlexius/watch-aware-preloader/internal/core"
-	"github.com/sydlexius/watch-aware-preloader/internal/libscope"
-	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
-	"github.com/sydlexius/watch-aware-preloader/internal/scorer"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/libscope"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/doxazo-net/watch-aware-preloader/internal/scorer"
 )
 
 // Provider is the subset of the Emby client the pipeline needs.

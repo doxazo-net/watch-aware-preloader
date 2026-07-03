@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
-	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
-	"github.com/sydlexius/watch-aware-preloader/internal/status"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/status"
 )
 
 // SweepAndRecord runs one sweep via RunOnce, times it, and writes the status

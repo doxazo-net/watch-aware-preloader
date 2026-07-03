@@ -3,8 +3,8 @@ package app
 import (
 	"log/slog"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/pagecache"
-	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pagecache"
+	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
 )
 
 // VerifyResidency reports what percentage of [offset, offset+length) is resident

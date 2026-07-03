@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
 )
 
 type residentCache struct {
