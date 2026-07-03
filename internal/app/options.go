@@ -11,8 +11,8 @@ import "github.com/doxazo-net/watch-aware-preloader/internal/config"
 // status write. The lower-level CollectCandidates keeps explicit params and is
 // fed the collection fields by RunOnce.
 type SweepOptions struct {
-	Enabled          []string           // enabled user IDs/names (empty = all users)
-	EnabledLibraries []string           // library-scope filter (empty = all libraries)
+	Enabled          []string           // enabled user names, empty = all users (ResolveUserIDs maps names to IDs)
+	EnabledLibraries []string           // enabled library IDs, empty = all libraries (library-scope filter)
 	Tiers            config.TiersConfig // per-tier enable + per-user caps
 	Budget           int64              // preload byte budget for this sweep
 	Mode             string             // status.json run mode: "once", "verify", or "daemon"
