@@ -95,11 +95,24 @@ first, so it includes all three cold components):
 | **ON** - preloaded, disk forced to standby | **12 ms** | **stays in standby** (served from RAM) |
 | **OFF** - cold, disk in standby | **2845 ms** | spins up (active) |
 
-The warm read returns in ~12 ms **without ever waking the disk**; the cold read
-pays spin-up + cold seek + cold load (~2.8 s here; spin-up alone measured 1.5-2.8 s
-across trials by standby depth, and slower array drives are where the commonly-cited
-8-10 s figure comes from). Objectively, the preloader takes the entire cold-disk
-access sequence off the playback-start path - not merely the spin-up second.
+The warm read returns in ~12 ms **without ever waking the disk**. The cold read pays
+spin-up + cold seek + cold load; the value depends on how deeply the disk has spun
+down (a light idle re-spins in 1.5-4.6 s; a genuine full-standby stop is longer).
+
+**True full-standby spin-up** (first `O_DIRECT` read after the disk was held in a
+confirmed dead stop, 16 MiB), measured per RPM class on the array:
+
+| Drive | RPM / size | Cold read from full standby |
+|-------|-----------|-----------------------------|
+| disk1 | 5400 / 8 TB | **9881 ms** |
+| disk2 | 5400 / 8 TB | **9829 ms** |
+| disk5 | 7200 / 18 TB | **8615 ms** |
+| disk8 | 7200 / 18 TB | **8460 ms** |
+
+So ~9.9 s on the 5400 RPM drives and ~8.5 s on the 7200 RPM drives (the higher RPM
+spins up faster despite the larger platters) - versus a ~12-50 ms warm read, a
+~175-200x reduction. Objectively, the preloader takes the entire cold-disk access
+sequence off the playback-start path - not merely the spin-up second.
 
 ### Notes / minor issues observed (not filed, per the maintainer's freeze)
 
@@ -246,7 +259,7 @@ mdcmd status | grep -i spindown   # or check the Unraid Main tab
 |-------------------|--------|
 | Status visibility | **PASS** - `-verify` emits per-tier/user counts + `mean_resident_pct`; `by_tier=resume:651,recently-added:36` |
 | Cache-hit verification | **PASS** - freshly-warmed ranges report `mean_resident_pct=100`; second pass skips resident items |
-| Measured start-time improvement | **PASS** - warm read ~12 ms (disk stays in standby) vs cold ~2845 ms (spin-up + cold seek + cold load); the whole cold-access sequence is moved off the playback path |
+| Measured start-time improvement | **PASS** - warm read ~12-50 ms (disk stays in standby) vs cold ~9.9 s (5400 RPM) / ~8.5 s (7200 RPM) full-standby spin-up + seek + load; the whole cold-access sequence is moved off the playback path |
 | Subjective feel | **Deferred** - optional real-player check, left to the maintainer |
 
 **Conclusion:** Phase 1 meets its objective success criteria. The engine

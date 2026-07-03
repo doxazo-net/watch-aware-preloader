@@ -29,15 +29,16 @@ Unraid array (a mix of 5400 and 7200 RPM WD drives, 8-18 TB):
 
 | First playback bytes | Cold array disk | Preloaded (warm) |
 |---|---|---|
-| Latency to first bytes | **~7-10 s** (spin-up + seek + load) | **~50 ms** (served from RAM) |
+| Latency to first bytes | **~8.5-10 s** (spin-up + seek + load) | **~50 ms** (served from RAM) |
 | Does the disk wake up? | Yes - and you wait for it | **No** - the read never touches the platter |
 
-The warm figure is measured directly and holds *through Unraid's FUSE layer* - reading a preloaded
+Both figures are measured on the same array. Cold spin-up (first read from a genuinely spun-down
+disk): **~9.9 s on the 5400 RPM drives, ~8.5 s on the 7200 RPM drives** - a ~175-200x difference
+versus the warm read. The warm figure holds *through Unraid's FUSE layer* - reading a preloaded
 range via `/mnt/user` (exactly how the media server reads it) returned in ~12-50 ms and left the
 drive **in standby**. Even the file `open`/`stat` didn't wake it. The disk only spins up when
 playback runs *past* the warmed window - and by then it's spinning in the background, no longer
-between you and the first frame. (Cold spin-up varies by drive: these 5400/7200 RPM array drives
-are the familiar 7-10 s stall; the warm-read number does not.)
+between you and the first frame.
 
 > Note: this never serves or transcodes media. It only reads byte ranges to make the Linux kernel
 > cache them - the same shared page cache your media server reads from. The page cache is the product.
