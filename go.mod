@@ -1,4 +1,4 @@
-module github.com/sydlexius/watch-aware-preloader
+module github.com/doxazo-net/watch-aware-preloader
 
 go 1.26.4
 

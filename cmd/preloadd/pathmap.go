@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
-	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
 )
 
 // execRunner runs a real command with a bounded timeout. It is the production

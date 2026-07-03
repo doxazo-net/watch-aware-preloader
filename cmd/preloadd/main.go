@@ -11,12 +11,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/app"
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
-	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
-	"github.com/sydlexius/watch-aware-preloader/internal/pagecache"
-	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
-	"github.com/sydlexius/watch-aware-preloader/internal/secrets"
+	"github.com/doxazo-net/watch-aware-preloader/internal/app"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pagecache"
+	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/secrets"
 )
 
 var version = "dev"

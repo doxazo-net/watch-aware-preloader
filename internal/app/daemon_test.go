@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/core"
-	"github.com/sydlexius/watch-aware-preloader/internal/mediaserver/emby"
-	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
-	"github.com/sydlexius/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
+	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
 )
 
 // stubCache is a no-op page-cache stub: Warm always succeeds, residency unknown.

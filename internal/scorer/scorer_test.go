@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 )
 
 func item(id string, off time.Duration) core.MediaItem {

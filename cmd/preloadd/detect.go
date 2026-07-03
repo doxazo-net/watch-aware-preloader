@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
-	"github.com/sydlexius/watch-aware-preloader/internal/pathmap"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
 )
 
 // runDetectSubcommand emits the effective path rules as JSON. Read-only and

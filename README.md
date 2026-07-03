@@ -53,14 +53,14 @@ generated `.plg` to each release, so install from the stable "latest release"
 asset URL (it always tracks the newest stable release's package):
 
 ```text
-https://github.com/sydlexius/watch-aware-preloader/releases/latest/download/watch-aware-preloader.plg
+https://github.com/doxazo-net/watch-aware-preloader/releases/latest/download/watch-aware-preloader.plg
 ```
 
 To install a specific pre-release build for testing, use that release's
 versioned asset URL instead (the `latest` URL only resolves to stable releases):
 
 ```text
-https://github.com/sydlexius/watch-aware-preloader/releases/download/<version>/watch-aware-preloader.plg
+https://github.com/doxazo-net/watch-aware-preloader/releases/download/<version>/watch-aware-preloader.plg
 ```
 
 On install the plugin:

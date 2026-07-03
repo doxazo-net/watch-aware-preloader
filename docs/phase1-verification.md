@@ -1,7 +1,7 @@
 # Phase 1 - End-to-End Verification (outatime)
 
 Hands-on validation of the Phase 1 engine against the real Emby server on the
-Unraid host `outatime`. Tracks [issue #1](https://github.com/sydlexius/watch-aware-preloader/issues/1).
+Unraid host `outatime`. Tracks [issue #1](https://github.com/doxazo-net/watch-aware-preloader/issues/1).
 
 > Status: **IN PROGRESS** - results below are placeholders (`TODO`) until the
 > host run is done. Fill each in as the runbook steps complete.

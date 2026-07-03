@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

@@ -1,5 +1,5 @@
 {
-    "name": "sydlexius/watch-aware-preloader",
+    "name": "doxazo-net/watch-aware-preloader",
     "description": "PHP dev tooling for the watch-aware-preloader Unraid plugin settings page",
     "type": "project",
     "license": "MIT",

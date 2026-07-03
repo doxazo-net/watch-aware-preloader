@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/sydlexius/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 )
 
 // ticksPerSecond is the Emby/Jellyfin tick unit: 100-nanosecond intervals.
