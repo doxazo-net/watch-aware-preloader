@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+  # Run on every PR regardless of base branch, so stacked PRs (targeting a
+  # feature branch, not main) still get full CI. A base-restricted filter here
+  # silently skipped CI on stacked PRs.
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
