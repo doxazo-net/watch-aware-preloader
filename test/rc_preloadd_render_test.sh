@@ -30,6 +30,7 @@ cat > "$WAP_FLASH/watch-aware-preloader.cfg" <<'CFG'
 SERVER_TYPE="emby"
 SERVER_URL="http://media.example:8096"
 USERS="alice, bob"
+LIBRARIES="lib-1, lib-2"
 RAM_PERCENT="40"
 TARGET_SECONDS="25"
 MIN_HEAD_MB="8"
@@ -48,7 +49,10 @@ cron="$WAP_FLASH/watch-aware-preloader.cron"
 
 assert_contains "$cfg" 'type = "emby"'
 assert_contains "$cfg" 'url = "http://media.example:8096"'
+assert_contains "$cfg" '[users]'
 assert_contains "$cfg" 'enabled = ["alice", "bob"]'
+assert_contains "$cfg" '[libraries]'
+assert_contains "$cfg" 'enabled = ["lib-1", "lib-2"]'
 assert_contains "$cfg" 'ram_percent = 40'
 assert_contains "$cfg" 'target_seconds = 25'
 assert_contains "$cfg" 'from = "/share"'

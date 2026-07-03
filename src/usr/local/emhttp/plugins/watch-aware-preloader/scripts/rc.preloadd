@@ -199,10 +199,11 @@ render() {
     local src="${CFG}"
     [ -f "$src" ] || src="${DEFAULT_CFG}"
 
-    local server_type server_url users ram target minh maxh tailmb maps interval
+    local server_type server_url users libraries ram target minh maxh tailmb maps interval
     server_type="$(cfg_get "$src" SERVER_TYPE emby)"
     server_url="$(cfg_get "$src" SERVER_URL "http://localhost:8096")"
     users="$(cfg_get "$src" USERS "")"
+    libraries="$(cfg_get "$src" LIBRARIES "")"
     ram="$(cfg_get "$src" RAM_PERCENT 50)"
     target="$(cfg_get "$src" TARGET_SECONDS 20)"
     minh="$(cfg_get "$src" MIN_HEAD_MB 8)"
@@ -222,8 +223,9 @@ render() {
     tailmb="$(num_or "$tailmb" 1)"
     interval="$(num_min1 "$interval" 15)"
 
-    local users_toml path_map_toml
+    local users_toml libraries_toml path_map_toml
     users_toml="$(csv_to_toml_array "$users")"
+    libraries_toml="$(csv_to_toml_array "$libraries")"
     path_map_toml="$(render_path_maps "$maps")"
 
     umask 077
@@ -240,6 +242,9 @@ url = "${server_url}"
 
 [users]
 enabled = ${users_toml}
+
+[libraries]
+enabled = ${libraries_toml}
 
 [preload]
 ram_percent = ${ram}
