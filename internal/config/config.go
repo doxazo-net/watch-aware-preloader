@@ -24,6 +24,22 @@ type LibrariesConfig struct {
 	Enabled []string `toml:"enabled"` // library IDs; empty => all libraries
 }
 
+// TierDial controls one preload signal tier. MaxItems caps how many items the
+// tier contributes per user (0 = no cap).
+type TierDial struct {
+	Enabled  bool `toml:"enabled"`
+	MaxItems int  `toml:"max_items"`
+}
+
+// TiersConfig holds the per-signal dials. The zero value (no [tiers] block)
+// means every tier is enabled with no cap, preserving the pre-dials behavior;
+// applyDefaults fills that in.
+type TiersConfig struct {
+	Resume        TierDial `toml:"resume"`
+	NextUp        TierDial `toml:"next_up"`
+	RecentlyAdded TierDial `toml:"recently_added"`
+}
+
 // PreloadConfig controls the preload budget and read-ahead sizes.
 type PreloadConfig struct {
 	RAMPercent    int   `toml:"ram_percent"`
@@ -62,6 +78,7 @@ type Config struct {
 	Server     ServerConfig    `toml:"server"`
 	Users      UsersConfig     `toml:"users"`
 	Libraries  LibrariesConfig `toml:"libraries"`
+	Tiers      TiersConfig     `toml:"tiers"`
 	Preload    PreloadConfig   `toml:"preload"`
 	PathMap    []PathRule      `toml:"path_map"`
 	Schedule   ScheduleConfig  `toml:"schedule"`
@@ -77,7 +94,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding config: %w", err)
 	}
-	c.applyDefaults()
+	c.applyDefaults(md.IsDefined("tiers"))
 	for _, key := range md.Undecoded() {
 		if key.String() == "server.api_key" {
 			return nil, fmt.Errorf("server.api_key must not be in config.toml; move it to the secrets file (%s) or the EMBY_API_KEY env var", c.SecretPath)
@@ -89,7 +106,7 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
-func (c *Config) applyDefaults() {
+func (c *Config) applyDefaults(tiersDefined bool) {
 	if c.Preload.RAMPercent == 0 {
 		c.Preload.RAMPercent = 50
 	}
@@ -125,6 +142,17 @@ func (c *Config) applyDefaults() {
 	}
 	if c.SecretPath == "" {
 		c.SecretPath = "/boot/config/plugins/watch-aware-preloader/secrets.toml"
+	}
+	// No [tiers] block at all: enable every tier with no cap, matching the
+	// pre-dials behavior. tiersDefined comes from the TOML metadata (not the
+	// decoded value) so an operator who explicitly sets enabled=false for tiers
+	// is honored rather than silently re-enabled.
+	if !tiersDefined {
+		c.Tiers = TiersConfig{
+			Resume:        TierDial{Enabled: true},
+			NextUp:        TierDial{Enabled: true},
+			RecentlyAdded: TierDial{Enabled: true},
+		}
 	}
 }
 
