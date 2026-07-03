@@ -5,9 +5,12 @@ Unraid host `outatime`. Tracks [issue #1](https://github.com/doxazo-net/watch-aw
 
 > Status: **VALIDATED (2026-07-03)** - the engine is confirmed working end to end
 > on `outatime`. The two original bugs are fixed, the resume tier is repaired, and
-> the objective start-time criteria are measured (see the 2026-07-03 findings
-> below). The only open item is the optional subjective real-player check, which
-> is left to the maintainer. The 2026-06-27 first-run findings are kept as history.
+> the objective start-time improvement is measured via a **page-cache read-timing
+> proxy** (warm vs cold-from-standby reads; see the 2026-07-03 findings below) - not
+> a media-player TTFF stopwatch. Runbook sections 4 and 5 below describe the
+> optional player-based TTFF + subjective capture, which is **deferred to the
+> maintainer** and not required for the objective PASS. The 2026-06-27 first-run
+> findings are kept as history.
 
 ## Environment
 
@@ -50,7 +53,7 @@ items live on the SSD cache pool.
 ### Status visibility + cache-hit / residency - CONFIRMED
 
 A cold-cache sweep with the fixed binary warmed the resume set and reported
-`verify complete mean_resident_pct=100`, with `preloaded=35 skipped=... missing=0`
+`verify complete mean_resident_pct=100`, with `preloaded=35 skipped=652 missing=0`
 and a per-tier breakdown (`by_tier=resume:651,recently-added:36`). mincore
 residency works on the array (non-FUSE) paths; the earlier "residency unavailable"
 line only appears when a sweep warms 0 ranges (everything already resident).
@@ -219,8 +222,8 @@ resident, no budget spent). Optionally cross-check with `vmtouch`:
 vmtouch -v "/mnt/user/<one warmed file>"   # should show a high resident %
 ```
 
-- [ ] Second pass shows `skipped` > 0 for the items warmed in step 2: **TODO**
-- [ ] `vmtouch` confirms resident pages on a sampled file: **TODO %**
+- [x] Second pass shows `skipped` > 0 for the items warmed in step 2: **PASS** (`skipped=652`)
+- [x] Residency confirmed: **100%** via the engine's mincore report (`vmtouch` not installed on the host)
 
 ### FUSE residency (/mnt/user)
 
@@ -231,7 +234,12 @@ per-file residency is all-or-nothing: `100%` (probe served from RAM, fast) or
 A second `-verify` pass after a warm should report the warmed items cached
 (`skipped > 0`), confirming the warm landed in the shared page cache.
 
-### 4. Measured start-time (spun-down disk, TTFF OFF vs ON)
+### 4. Measured start-time (spun-down disk, TTFF OFF vs ON) - OPTIONAL / deferred
+
+> The **objective** start-time result is already captured above (2026-07-03
+> findings: warm ~12-50 ms vs full-standby cold ~8.5-9.9 s, via the read-timing
+> proxy). The player-based TTFF table below is an *optional* real-player
+> cross-check, deferred to the maintainer; it is not required for the objective PASS.
 
 Measure time-to-first-frame for a title on an array disk that has spun down.
 
@@ -249,9 +257,10 @@ mdcmd status | grep -i spindown   # or check the Unraid Main tab
 - [ ] ON captured: **TODO s**
 - [ ] Delta (expected ~8-10s improvement, the spin-up window): **TODO**
 
-### 5. Subjective feel
+### 5. Subjective feel - OPTIONAL / deferred
 
-- [ ] Next-up / resume titles start without the stall: **TODO** (note observations)
+- [ ] Next-up / resume titles start without the stall: *optional real-player
+  observation, deferred to the maintainer* (not required for the objective PASS)
 
 ## Results summary
 
