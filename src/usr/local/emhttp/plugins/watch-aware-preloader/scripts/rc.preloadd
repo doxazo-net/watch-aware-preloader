@@ -109,6 +109,15 @@ num_min1() {
     fi
 }
 
+# cfg_bool VALUE -> "true" if VALUE is a truthy flag (1/true/yes/on, any case),
+# else "false". Renders a bare TOML boolean for the [tiers.*] enabled fields.
+cfg_bool() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        1 | true | yes | on) printf 'true' ;;
+        *) printf 'false' ;;
+    esac
+}
+
 # csv_to_toml_array "a, b" -> ["a", "b"] ; "" -> []
 csv_to_toml_array() {
     local csv="$1" out="" item
@@ -228,6 +237,14 @@ render() {
     maps="$(cfg_get "$src" PATH_MAPS "")"
     interval="$(cfg_get "$src" CRON_INTERVAL 15)"
 
+    local tr_en tr_max tn_en tn_max tc_en tc_max
+    tr_en="$(cfg_bool "$(cfg_get "$src" TIER_RESUME_ENABLED 1)")"
+    tr_max="$(num_or "$(cfg_get "$src" TIER_RESUME_MAX 0)" 0)"
+    tn_en="$(cfg_bool "$(cfg_get "$src" TIER_NEXTUP_ENABLED 1)")"
+    tn_max="$(num_or "$(cfg_get "$src" TIER_NEXTUP_MAX 0)" 0)"
+    tc_en="$(cfg_bool "$(cfg_get "$src" TIER_RECENT_ENABLED 1)")"
+    tc_max="$(num_or "$(cfg_get "$src" TIER_RECENT_MAX 0)" 0)"
+
     # Escape string scalars for their TOML basic strings; validate numerics
     # (rendered unquoted) so neither can inject into config.toml.
     server_type="$(toml_escape "$server_type")"
@@ -261,6 +278,18 @@ enabled = ${users_toml}
 
 [libraries]
 enabled = ${libraries_toml}
+
+[tiers.resume]
+enabled = ${tr_en}
+max_items = ${tr_max}
+
+[tiers.next_up]
+enabled = ${tn_en}
+max_items = ${tn_max}
+
+[tiers.recently_added]
+enabled = ${tc_en}
+max_items = ${tc_max}
 
 [preload]
 ram_percent = ${ram}
