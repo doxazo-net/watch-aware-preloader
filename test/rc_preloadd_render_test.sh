@@ -180,6 +180,32 @@ bash "$RC" render
 assert_contains "$cron" '*/15 * * * *'
 assert_not_contains "$cron" '*/0 '
 
+# --- tiers: defaults (no TIER_* keys) -> all enabled, max_items 0 ---
+cat > "$WAP_FLASH/watch-aware-preloader.cfg" <<'CFG'
+SERVER_TYPE="emby"
+SERVER_URL="http://media.example:8096"
+CFG
+rm -f "$cfg"
+bash "$RC" render
+grep -q '^\[tiers.resume\]$'         "$cfg" || fail "missing [tiers.resume]"
+grep -q '^\[tiers.next_up\]$'        "$cfg" || fail "missing [tiers.next_up]"
+grep -q '^\[tiers.recently_added\]$' "$cfg" || fail "missing [tiers.recently_added]"
+# Scope the default assertions to each tier block: an unscoped grep would pass if
+# any single tier had the default even when another did not.
+for t in resume next_up recently_added; do
+    awk -v h="[tiers.$t]" '$0==h{f=1;next} f&&/^enabled = /{print;exit}'   "$cfg" | grep -q 'enabled = true' || fail "tier $t enabled default not true"
+    awk -v h="[tiers.$t]" '$0==h{f=1;next} f&&/^max_items = /{print;exit}' "$cfg" | grep -q 'max_items = 0'   || fail "tier $t max_items default not 0"
+done
+
+# --- tiers: explicit values incl. a disabled tier and a cap ---
+{ printf 'TIER_RESUME_ENABLED="1"\nTIER_RESUME_MAX="15"\n'; \
+  printf 'TIER_NEXTUP_ENABLED="0"\nTIER_NEXTUP_MAX="0"\n'; \
+  printf 'TIER_RECENT_ENABLED="1"\nTIER_RECENT_MAX="5"\n'; } >> "$WAP_FLASH/watch-aware-preloader.cfg"
+bash "$RC" render
+# resume enabled=true max=15; next_up enabled=false; recently_added max=5
+awk '/^\[tiers.next_up\]$/{f=1;next} f&&/^enabled = /{print;exit}' "$cfg" | grep -q 'enabled = false' || fail "next_up not disabled"
+awk '/^\[tiers.resume\]$/{f=1;next} f&&/^max_items = /{print;exit}' "$cfg" | grep -q 'max_items = 15' || fail "resume max not 15"
+
 # --- write-pickers: assembles pickers.json from the three read-only
 # subcommands, atomically and world-readable. ---
 STUB_BIN="$work/preloadd"

@@ -42,6 +42,13 @@ $wapCurLibs    = implode(',', $wapSelLibs);
 // island below opens directly with the connect-gate check).
 $wapMaps       = wap_picker_pathmaps($wapPickers);
 $wapRules      = (\is_array($wapMaps['rules'] ?? null)) ? $wapMaps['rules'] : [];
+// Signal tiers for the dial rows: [cfg-prefix, label]. Default enabled (checked)
+// and max 0 when the cfg key is absent, preserving pre-dials behavior.
+$wapTiers = [
+    ['RESUME', 'Resume points'],
+    ['NEXTUP', 'Next-up episodes'],
+    ['RECENT', 'Recently added'],
+];
 ?>
 
 <table class="tablesorter shift ups">
@@ -130,6 +137,25 @@ $wapRules      = (\is_array($wapMaps['rules'] ?? null)) ? $wapMaps['rules'] : []
     </dd>
 </dl>
 <blockquote class="inline_help">Only items in the checked libraries are preloaded. Leave all unchecked to include every library.</blockquote>
+
+<dl>
+    <dt>Signal tiers</dt>
+    <dd>
+    <?php foreach ($wapTiers as [$wapTk, $wapTlabel]) {
+        // Match rc.preloadd's cfg_bool truthy set (1/true/yes/on) so the checkbox
+        // reflects exactly what rc render will emit, even for a hand-edited .cfg.
+        $wapTEn  = \in_array(strtolower((string) ($wapCfg["TIER_{$wapTk}_ENABLED"] ?? '1')), ['1', 'true', 'yes', 'on'], true);
+        $wapTMax = (int) ($wapCfg["TIER_{$wapTk}_MAX"] ?? 0);
+        ?>
+        <label style="display:block">
+            <input type="checkbox" name="TIER_<?= $wapTk ?>_ENABLED" value="1"<?= $wapTEn ? ' checked' : '' ?>>
+            <?= htmlspecialchars($wapTlabel) ?>
+            &nbsp; max items <input type="number" name="TIER_<?= $wapTk ?>_MAX" min="0" max="10000" step="1" value="<?= $wapTMax ?>" style="width:6em">
+        </label>
+    <?php } ?>
+    </dd>
+</dl>
+<blockquote class="inline_help">Which watch-signals contribute to the preload set, and a per-user item cap for each (0 = no limit). Priority order is fixed; unchecking a tier skips it entirely.</blockquote>
 
 <dl>
     <dt><label for="wap_ram_percent">RAM budget (percent)</label></dt>
