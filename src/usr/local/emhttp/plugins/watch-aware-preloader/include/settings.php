@@ -27,6 +27,34 @@ function wap_cfg_sanitize_str(string $v): string
 }
 
 /**
+ * Normalize a posted list-or-scalar field into a sanitized comma-separated cfg
+ * value. Checkbox pickers post an array (USERS[]/LIBRARIES[]); a legacy free-text
+ * field posts a scalar. Each element is run through wap_cfg_sanitize_str; empty
+ * elements are dropped.
+ *
+ * @param mixed $v array<int,scalar>|scalar|null
+ */
+function wap_cfg_csv_from_list(mixed $v): string
+{
+    if (\is_array($v)) {
+        $parts = [];
+        foreach ($v as $item) {
+            if (!\is_scalar($item)) {
+                continue;
+            }
+            $s = wap_cfg_sanitize_str((string) $item);
+            if ($s !== '') {
+                $parts[] = $s;
+            }
+        }
+
+        return implode(',', $parts);
+    }
+
+    return wap_cfg_sanitize_str((string) ($v ?? ''));
+}
+
+/**
  * Coerce a posted numeric field to an int within [$min, $max], falling back to
  * $default when the value is not a plain decimal or is out of range. Only decimal
  * digits (optionally signed, optionally with a fractional part that is then
@@ -68,7 +96,8 @@ function wap_sanitize_settings_post(array &$post): void
     $url = wap_cfg_sanitize_str((string) ($post['SERVER_URL'] ?? ''));
     $post['SERVER_URL'] = ($url === '') ? 'http://localhost:8096' : $url;
 
-    $post['USERS']     = wap_cfg_sanitize_str((string) ($post['USERS'] ?? ''));
+    $post['USERS']     = wap_cfg_csv_from_list($post['USERS'] ?? '');
+    $post['LIBRARIES'] = wap_cfg_csv_from_list($post['LIBRARIES'] ?? '');
     $post['PATH_MAPS'] = wap_cfg_sanitize_str((string) ($post['PATH_MAPS'] ?? ''));
 
     $post['RAM_PERCENT']    = (string) wap_cfg_clamp_int($post['RAM_PERCENT'] ?? null, 1, 100, 50);

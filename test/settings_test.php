@@ -64,6 +64,22 @@ $evil = ['SERVER_URL' => "http://x\nINJECTED=pwned"];
 wap_sanitize_settings_post($evil);
 check(!str_contains($evil['SERVER_URL'], "\n"), 'newline stripped from value');
 
+// --- wap_cfg_csv_from_list ---
+check(wap_cfg_csv_from_list(['id-a', 'id-b']) === 'id-a,id-b', 'array joined to csv');
+check(wap_cfg_csv_from_list(['id-a', '', ' id-b ']) === 'id-a,id-b', 'array trims and drops empties');
+check(wap_cfg_csv_from_list('legacy,names') === 'legacy,names', 'scalar passes through sanitized');
+check(wap_cfg_csv_from_list(["a\"b", 'c']) === 'ab,c', 'array elements sanitized');
+
+// --- wap_sanitize_settings_post: USERS[]/LIBRARIES[] arrays ---
+$post = ['USERS' => ['id-a', 'id-b'], 'LIBRARIES' => ['lib-1']];
+wap_sanitize_settings_post($post);
+check($post['USERS'] === 'id-a,id-b', 'USERS array normalized to csv');
+check($post['LIBRARIES'] === 'lib-1', 'LIBRARIES array normalized to csv');
+
+$post2 = [];
+wap_sanitize_settings_post($post2);
+check($post2['LIBRARIES'] === '', 'LIBRARIES defaults empty');
+
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} failure(s)\n");
     exit(1);
