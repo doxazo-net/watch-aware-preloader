@@ -17,6 +17,9 @@ require_once "{$docroot}/plugins/watch-aware-preloader/include/paths.php";
 
 $wapStatusPath = wap_default_status_path();
 $wapStatus     = wap_read_status($wapStatusPath);
+// Last connection-test result (#36), persisted by `rc.preloadd test` so it
+// survives the transient /update.php progress popup.
+$wapLastTest   = wap_read_last_test(wap_default_last_test_path());
 
 $wapCfg = \function_exists('parse_plugin_cfg') ? parse_plugin_cfg('watch-aware-preloader') : [];
 // Declare $var explicitly: Unraid populates it in the page's including scope, but
@@ -229,6 +232,27 @@ $wapTiers = [
     <dd><span><input type="submit" value="Test connection"></span></dd>
 </dl>
 </form>
+
+<?php if ($wapLastTest !== null) {
+    // Strip the message's own OK:/FAIL: prefix for display; the PASS/FAIL badge
+    // already conveys it (and messages without a prefix, e.g. "No server URL
+    // configured.", are left intact).
+    $wapLtMsg = preg_replace('/^(?:OK|FAIL):\s*/i', '', (string) ($wapLastTest['message'] ?? ''));
+    // Bound the displayed message: it is root-written and already escaped, but
+    // truncating guards against an unexpectedly long value blowing out the panel.
+    // Use mb_* so a cut never splits a UTF-8 char (which would make the following
+    // htmlspecialchars warn and drop content), with a byte-based fallback.
+    if ((\function_exists('mb_strlen') ? mb_strlen($wapLtMsg, 'UTF-8') : \strlen($wapLtMsg)) > 300) {
+        $wapLtMsg = (\function_exists('mb_substr') ? mb_substr($wapLtMsg, 0, 300, 'UTF-8') : substr($wapLtMsg, 0, 300)) . '...';
+    }
+    ?>
+<blockquote class="inline_help">
+    Last connection test
+    (<?= htmlspecialchars(wap_format_pacific((string) ($wapLastTest['tested_at'] ?? ''))) ?>):
+    <strong><?= (($wapLastTest['ok'] ?? null) === true) ? 'PASS' : 'FAIL' ?></strong>
+    - <?= htmlspecialchars((string) $wapLtMsg) ?>
+</blockquote>
+<?php } ?>
 
 <form markdown="false" method="POST" action="/update.php" target="progressFrame">
 <input type="hidden" name="#command" value="/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd">
