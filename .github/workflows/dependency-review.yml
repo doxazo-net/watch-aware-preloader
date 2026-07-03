@@ -4,9 +4,8 @@
 name: Dependency Review
 
 on:
+  # All PRs (incl. stacked PRs targeting a feature branch), not just base=main.
   pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
