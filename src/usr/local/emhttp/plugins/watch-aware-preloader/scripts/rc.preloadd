@@ -19,7 +19,8 @@ SECRETS="${FLASH}/secrets.toml"
 CFG="${FLASH}/${PLUGIN}.cfg"
 DEFAULT_CFG="${RUNTIME}/default.cfg"
 CRON="${FLASH}/${PLUGIN}.cron"
-BIN="${RUNTIME}/preloadd"
+BIN="${WAP_BIN:-${RUNTIME}/preloadd}"
+PICKERS="${WAP_PICKERS_PATH:-/var/local/preloadd/pickers.json}"
 # Cron-collation marker (PRs #24/#25). update_cron only collates a plugin's .cron
 # fragment when /var/log/plugins/<name>.plg is present; see ensure_marker.
 PLUGIN_LOG_DIR="${WAP_PLUGIN_LOG_DIR:-/var/log/plugins}"
@@ -285,10 +286,35 @@ test_connection() {
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "X-Emby-Token: ${token}" "${url}/System/Info" || true)"
     if [ "$code" = "200" ]; then
         echo "OK: server reachable and API key accepted."
+        if write_pickers; then
+            echo "Pickers refreshed."
+        else
+            echo "Note: could not refresh user/library pickers (see log)."
+        fi
     else
         echo "FAIL: server reachable but API key rejected (HTTP ${code})."
         return 1
     fi
+}
+
+# write_pickers: run the read-only subcommands and assemble pickers.json for the
+# settings page. Root-only reads (secrets.toml via the binary). Writes atomically
+# and world-readable; only overwrites the cache when ALL THREE subcommands
+# succeed, so a transient failure keeps the last good cache (fail loud).
+write_pickers() {
+    local src="${CFG}" url users libs maps gen tmp
+    [ -f "$src" ] || src="${DEFAULT_CFG}"
+    url="$(cfg_get "$src" SERVER_URL "")"
+    users="$("${BIN}" list-users -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: list-users failed" >&2; return 1; }
+    libs="$("${BIN}" list-libraries -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: list-libraries failed" >&2; return 1; }
+    maps="$("${BIN}" detect-pathmaps -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: detect-pathmaps failed" >&2; return 1; }
+    gen="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    mkdir -p "$(dirname "${PICKERS}")"
+    tmp="$(mktemp "${PICKERS}.XXXXXX")"
+    printf '{"generated_at":"%s","server_url":"%s","users":%s,"libraries":%s,"pathmaps":%s}\n' \
+        "$gen" "$url" "$users" "$libs" "$maps" > "$tmp"
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "${PICKERS}"
 }
 
 run_now() {
@@ -330,7 +356,8 @@ case "${1:-}" in
     render)   render ;;
     seed)     seed ;;
     test)     test_connection ;;
+    write-pickers) write_pickers ;;
     run-now)  run_now ;;
     remove)   remove_cron ;;
-    *) echo "usage: rc.preloadd {install|update|render|seed|test|run-now|remove}" >&2; exit 1 ;;
+    *) echo "usage: rc.preloadd {install|update|render|seed|test|write-pickers|run-now|remove}" >&2; exit 1 ;;
 esac
