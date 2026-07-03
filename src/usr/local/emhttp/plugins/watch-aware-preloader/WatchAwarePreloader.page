@@ -240,8 +240,10 @@ $wapTiers = [
     $wapLtMsg = preg_replace('/^(?:OK|FAIL):\s*/i', '', (string) ($wapLastTest['message'] ?? ''));
     // Bound the displayed message: it is root-written and already escaped, but
     // truncating guards against an unexpectedly long value blowing out the panel.
-    if (\strlen($wapLtMsg) > 300) {
-        $wapLtMsg = substr($wapLtMsg, 0, 300) . '...';
+    // Use mb_* so a cut never splits a UTF-8 char (which would make the following
+    // htmlspecialchars warn and drop content), with a byte-based fallback.
+    if ((\function_exists('mb_strlen') ? \mb_strlen($wapLtMsg, 'UTF-8') : \strlen($wapLtMsg)) > 300) {
+        $wapLtMsg = (\function_exists('mb_substr') ? \mb_substr($wapLtMsg, 0, 300, 'UTF-8') : substr($wapLtMsg, 0, 300)) . '...';
     }
     ?>
 <blockquote class="inline_help">
