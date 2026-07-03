@@ -51,6 +51,34 @@ check(str_contains($formatted, 'PDT'), "pacific label present, got {$formatted}"
 // Unparseable time -> returned unchanged.
 check(wap_format_pacific('garbage') === 'garbage', 'unparseable time passthrough');
 
+// --- wap_read_last_test: the connection-test result written by rc.preloadd test.
+$lt = tempnam(sys_get_temp_dir(), 'waplt');
+
+// Missing file -> null.
+unlink($lt);
+check(wap_read_last_test($lt) === null, 'last-test missing file returns null');
+
+// Valid schema_version 1 -> decoded array.
+file_put_contents($lt, json_encode([
+    'schema_version' => 1,
+    'tested_at' => '2026-06-30T21:05:00Z',
+    'ok' => true,
+    'message' => 'OK: server reachable and API key accepted.',
+]));
+$t = wap_read_last_test($lt);
+check(is_array($t), 'valid last-test returns array');
+check(($t['ok'] ?? null) === true, 'last-test ok decoded');
+check(($t['message'] ?? null) === 'OK: server reachable and API key accepted.', 'last-test message decoded');
+
+// Wrong schema_version -> null.
+file_put_contents($lt, json_encode(['schema_version' => 2, 'ok' => true]));
+check(wap_read_last_test($lt) === null, 'last-test schema_version mismatch returns null');
+
+// Non-JSON -> null.
+file_put_contents($lt, 'not json');
+check(wap_read_last_test($lt) === null, 'last-test invalid JSON returns null');
+
+@unlink($lt);
 @unlink($tmp);
 
 if ($failures > 0) {

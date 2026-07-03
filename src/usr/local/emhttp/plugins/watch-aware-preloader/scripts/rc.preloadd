@@ -21,6 +21,10 @@ DEFAULT_CFG="${RUNTIME}/default.cfg"
 CRON="${FLASH}/${PLUGIN}.cron"
 BIN="${WAP_BIN:-${RUNTIME}/preloadd}"
 PICKERS="${WAP_PICKERS_PATH:-/var/local/preloadd/pickers.json}"
+# Connection-test result (#36): test_connection persists its outcome here so the
+# settings page can show a readable pass/fail after the transient /update.php
+# progress popup closes.
+LASTTEST="${WAP_LASTTEST_PATH:-/var/local/preloadd/last-test.json}"
 # Cron-collation marker (PRs #24/#25). update_cron only collates a plugin's .cron
 # fragment when /var/log/plugins/<name>.plg is present; see ensure_marker.
 PLUGIN_LOG_DIR="${WAP_PLUGIN_LOG_DIR:-/var/log/plugins}"
@@ -309,37 +313,71 @@ EOF
     render_cron "$interval"
 }
 
+# write_last_test OK MESSAGE: persist the connection-test outcome so the settings
+# page can render a readable result after the transient progress popup closes.
+# Best-effort (must NOT fail test_connection when /var is full/readonly): mirrors
+# write_pickers' atomic, world-readable, guarded write. OK is the bare JSON
+# boolean "true"/"false"; MESSAGE is escaped as a JSON string.
+write_last_test() {
+    local ok="$1" msg="$2" ts tmp
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    msg="$(json_escape "$msg")"
+    mkdir -p "$(dirname "${LASTTEST}")" || { echo "write_last_test: mkdir failed" >&2; return 1; }
+    tmp="$(mktemp "${LASTTEST}.XXXXXX")" || { echo "write_last_test: mktemp failed" >&2; return 1; }
+    if ! { printf '{"schema_version":1,"tested_at":"%s","ok":%s,"message":"%s"}\n' \
+        "$ts" "$ok" "$msg" > "$tmp" \
+        && chmod 0644 "$tmp" \
+        && mv -f "$tmp" "${LASTTEST}"; }; then
+        echo "write_last_test: cache write failed" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+}
+
 # test_connection: reach the server's public endpoint, then (if a key is set)
-# the authenticated endpoint. Prints a human line for the webGui progress popup.
+# the authenticated endpoint. Prints a human line for the webGui progress popup
+# AND persists the outcome via write_last_test (#36) for the settings page.
 test_connection() {
-    local src="${CFG}" url token code
+    local src="${CFG}" url token code msg
     [ -f "$src" ] || src="${DEFAULT_CFG}"
     url="$(cfg_get "$src" SERVER_URL "")"
     if [ -z "$url" ]; then
-        echo "No server URL configured."
+        msg="No server URL configured."
+        echo "$msg"
+        write_last_test false "$msg" || true
         return 1
     fi
     url="${url%/}"
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${url}/System/Info/Public" || true)"
     if [ "$code" != "200" ]; then
-        echo "FAIL: ${url} not reachable (HTTP ${code:-none})."
+        msg="FAIL: ${url} not reachable (HTTP ${code:-none})."
+        echo "$msg"
+        write_last_test false "$msg" || true
         return 1
     fi
     token="$(read_api_key)"
     if [ -z "$token" ]; then
-        echo "OK: server reachable at ${url}. No API key set yet."
+        msg="OK: server reachable at ${url}. No API key set yet."
+        echo "$msg"
+        write_last_test true "$msg" || true
         return 0
     fi
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "X-Emby-Token: ${token}" "${url}/System/Info" || true)"
     if [ "$code" = "200" ]; then
-        echo "OK: server reachable and API key accepted."
+        msg="OK: server reachable and API key accepted."
+        echo "$msg"
         if write_pickers; then
             echo "Pickers refreshed."
         else
             echo "Note: could not refresh user/library pickers (see log)."
+            msg="${msg} (pickers not refreshed)"
         fi
+        write_last_test true "$msg" || true
+        return 0
     else
-        echo "FAIL: server reachable but API key rejected (HTTP ${code})."
+        msg="FAIL: server reachable but API key rejected (HTTP ${code})."
+        echo "$msg"
+        write_last_test false "$msg" || true
         return 1
     fi
 }

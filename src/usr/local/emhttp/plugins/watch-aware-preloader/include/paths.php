@@ -24,3 +24,9 @@ function wap_default_pickers_path(): string
 {
     return '/var/local/preloadd/pickers.json';
 }
+
+/** Default path `rc.preloadd test` writes its last connection-test result to. */
+function wap_default_last_test_path(): string
+{
+    return '/var/local/preloadd/last-test.json';
+}

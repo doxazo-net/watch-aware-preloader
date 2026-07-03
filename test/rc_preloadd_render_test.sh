@@ -257,4 +257,39 @@ print("  pickers.json valid JSON, server_url round-trips (json)")
 PY
 fi
 
+# --- test connection persists a last-test.json result (#36) so the settings page
+# can show a readable pass/fail after the transient /update.php progress popup
+# closes. The connection itself needs no live server here: the no-URL and
+# unreachable branches both persist ok=false deterministically offline. ---
+lasttest="$work/last-test.json"
+
+# No server URL -> ok=false, "No server URL configured.", still valid JSON.
+printf 'SERVER_URL=""\n' > "$WAP_FLASH/watch-aware-preloader.cfg"
+WAP_LASTTEST_PATH="$lasttest" bash "$RC" test || true
+[ -f "$lasttest" ] || fail "last-test.json not written on no-URL test"
+assert_contains "$lasttest" '"schema_version":1'
+assert_contains "$lasttest" '"ok":false'
+assert_contains "$lasttest" 'No server URL configured.'
+perms="$(stat -c '%a' "$lasttest" 2>/dev/null || stat -f '%Lp' "$lasttest")"
+[ "$perms" = "644" ] || fail "last-test.json not 0644 (got $perms)"
+if python3 -c 'import json' 2>/dev/null; then
+    python3 - "$lasttest" <<'PY'
+import sys, json
+with open(sys.argv[1]) as fh:
+    d = json.load(fh)
+assert d["ok"] is False, d
+assert d["schema_version"] == 1, d
+assert isinstance(d["tested_at"], str) and d["tested_at"], d
+print("  last-test.json valid JSON (no-URL branch)")
+PY
+fi
+
+# Unreachable server (refused port) -> ok=false, "not reachable".
+printf 'SERVER_URL="http://127.0.0.1:1"\n' > "$WAP_FLASH/watch-aware-preloader.cfg"
+rm -f "$lasttest"
+WAP_LASTTEST_PATH="$lasttest" bash "$RC" test || true
+[ -f "$lasttest" ] || fail "last-test.json not written on unreachable test"
+assert_contains "$lasttest" '"ok":false'
+assert_contains "$lasttest" 'not reachable'
+
 echo "PASS: rc.preloadd render"
