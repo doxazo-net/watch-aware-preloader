@@ -238,11 +238,16 @@ $wapTiers = [
     // already conveys it (and messages without a prefix, e.g. "No server URL
     // configured.", are left intact).
     $wapLtMsg = preg_replace('/^(?:OK|FAIL):\s*/i', '', (string) ($wapLastTest['message'] ?? ''));
+    // Bound the displayed message: it is root-written and already escaped, but
+    // truncating guards against an unexpectedly long value blowing out the panel.
+    if (\strlen($wapLtMsg) > 300) {
+        $wapLtMsg = substr($wapLtMsg, 0, 300) . '...';
+    }
     ?>
 <blockquote class="inline_help">
     Last connection test
     (<?= htmlspecialchars(wap_format_pacific((string) ($wapLastTest['tested_at'] ?? ''))) ?>):
-    <strong><?= !empty($wapLastTest['ok']) ? 'PASS' : 'FAIL' ?></strong>
+    <strong><?= (($wapLastTest['ok'] ?? null) === true) ? 'PASS' : 'FAIL' ?></strong>
     - <?= htmlspecialchars((string) $wapLtMsg) ?>
 </blockquote>
 <?php } ?>
