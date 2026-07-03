@@ -72,6 +72,41 @@ func TestRecentlyAddedQueryParams(t *testing.T) {
 	}
 }
 
+func TestResumeQueryParams(t *testing.T) {
+	// Emby's /Items/Resume returns nothing unless MediaTypes=Video is set:
+	// without it the endpoint yields zero items on a real server, silently
+	// disabling the resume tier. It must also request Path,MediaSources so the
+	// resume offset and warmable media info come back.
+	type req struct {
+		path string
+		q    url.Values
+	}
+	reqCh := make(chan req, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCh <- req{path: r.URL.Path, q: r.URL.Query()}
+		_, _ = w.Write([]byte(`{"Items":[]}`))
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL, "k", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Resume(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	got := <-reqCh
+	if got.path != "/Users/u1/Items/Resume" {
+		t.Errorf("path = %q, want /Users/u1/Items/Resume", got.path)
+	}
+	q := got.q
+	if q.Get("MediaTypes") != "Video" {
+		t.Errorf("MediaTypes = %q, want Video", q.Get("MediaTypes"))
+	}
+	if f := q.Get("Fields"); !strings.Contains(f, "Path") || !strings.Contains(f, "MediaSources") {
+		t.Errorf("Fields = %q, want to contain Path,MediaSources", f)
+	}
+}
+
 func TestRecentlyAddedMapsLeafItems(t *testing.T) {
 	c := serveFixture(t, "latest.json")
 	items, err := c.RecentlyAdded(context.Background(), "u1")
