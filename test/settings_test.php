@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../src/usr/local/emhttp/plugins/watch-aware-preloader/include/settings.php';
+$wapImpl = __DIR__ . '/../src/usr/local/emhttp/plugins/watch-aware-preloader/include/settings.php';
+if (!is_file($wapImpl)) {
+    fwrite(STDERR, "FAIL: implementation not found: {$wapImpl}\n");
+    exit(1);
+}
+require_once $wapImpl;
 
 $failures = 0;
 function check(bool $cond, string $msg): void
@@ -63,6 +68,43 @@ check($empty['CRON_INTERVAL'] === '15', 'default cron 15');
 $evil = ['SERVER_URL' => "http://x\nINJECTED=pwned"];
 wap_sanitize_settings_post($evil);
 check(!str_contains($evil['SERVER_URL'], "\n"), 'newline stripped from value');
+
+// --- wap_cfg_csv_from_list ---
+check(wap_cfg_csv_from_list(['id-a', 'id-b']) === 'id-a,id-b', 'array joined to csv');
+check(wap_cfg_csv_from_list(['id-a', '', ' id-b ']) === 'id-a,id-b', 'array trims and drops empties');
+check(wap_cfg_csv_from_list('legacy,names') === 'legacy,names', 'scalar passes through sanitized');
+check(wap_cfg_csv_from_list(["a\"b", 'c']) === 'ab,c', 'array elements sanitized');
+check(wap_cfg_csv_from_list(['a', ['nested'], 'b']) === 'a,b', 'non-scalar array items skipped');
+check(wap_cfg_csv_from_list(['Movies, TV', 'x']) === 'Movies TV,x', 'commas stripped from items (delimiter safety)');
+check(wap_cfg_csv_from_list(null) === '', 'null yields empty string');
+
+// --- wap_sanitize_settings_post: USERS[]/LIBRARIES[] arrays ---
+$post = ['USERS' => ['id-a', 'id-b'], 'LIBRARIES' => ['lib-1']];
+wap_sanitize_settings_post($post);
+check($post['USERS'] === 'id-a,id-b', 'USERS array normalized to csv');
+check($post['LIBRARIES'] === 'lib-1', 'LIBRARIES array normalized to csv');
+
+$post2 = [];
+wap_sanitize_settings_post($post2);
+check($post2['LIBRARIES'] === '', 'LIBRARIES defaults empty');
+
+// --- tier dials ---
+$post = [
+    'TIER_RESUME_ENABLED' => '1', 'TIER_RESUME_MAX' => '15',
+    'TIER_NEXTUP_MAX' => '0',                 // NEXTUP_ENABLED absent (unchecked)
+    'TIER_RECENT_ENABLED' => 'on', 'TIER_RECENT_MAX' => '5',
+];
+wap_sanitize_settings_post($post);
+check($post['TIER_RESUME_ENABLED'] === '1', 'resume enabled normalized to 1');
+check($post['TIER_RESUME_MAX'] === '15', 'resume max preserved');
+check($post['TIER_NEXTUP_ENABLED'] === '0', 'absent tier checkbox => 0');
+check($post['TIER_RECENT_ENABLED'] === '1', 'any present checkbox value => 1');
+check($post['TIER_RECENT_MAX'] === '5', 'recent max preserved');
+
+$empty = [];
+wap_sanitize_settings_post($empty);
+check($empty['TIER_RESUME_ENABLED'] === '0', 'all-absent => disabled flag 0');
+check($empty['TIER_RESUME_MAX'] === '0', 'max default 0');
 
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} failure(s)\n");

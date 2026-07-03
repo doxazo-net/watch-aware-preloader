@@ -18,3 +18,9 @@ function wap_default_secret_path(): string
 {
     return '/boot/config/plugins/watch-aware-preloader/secrets.toml';
 }
+
+/** Default path the engine writes the pickers cache to. */
+function wap_default_pickers_path(): string
+{
+    return '/var/local/preloadd/pickers.json';
+}

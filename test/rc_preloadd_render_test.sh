@@ -30,6 +30,7 @@ cat > "$WAP_FLASH/watch-aware-preloader.cfg" <<'CFG'
 SERVER_TYPE="emby"
 SERVER_URL="http://media.example:8096"
 USERS="alice, bob"
+LIBRARIES="lib-1, lib-2"
 RAM_PERCENT="40"
 TARGET_SECONDS="25"
 MIN_HEAD_MB="8"
@@ -48,7 +49,10 @@ cron="$WAP_FLASH/watch-aware-preloader.cron"
 
 assert_contains "$cfg" 'type = "emby"'
 assert_contains "$cfg" 'url = "http://media.example:8096"'
+assert_contains "$cfg" '[users]'
 assert_contains "$cfg" 'enabled = ["alice", "bob"]'
+assert_contains "$cfg" '[libraries]'
+assert_contains "$cfg" 'enabled = ["lib-1", "lib-2"]'
 assert_contains "$cfg" 'ram_percent = 40'
 assert_contains "$cfg" 'target_seconds = 25'
 assert_contains "$cfg" 'from = "/share"'
@@ -175,5 +179,82 @@ rm -f "$cfg" "$cron"
 bash "$RC" render
 assert_contains "$cron" '*/15 * * * *'
 assert_not_contains "$cron" '*/0 '
+
+# --- tiers: defaults (no TIER_* keys) -> all enabled, max_items 0 ---
+cat > "$WAP_FLASH/watch-aware-preloader.cfg" <<'CFG'
+SERVER_TYPE="emby"
+SERVER_URL="http://media.example:8096"
+CFG
+rm -f "$cfg"
+bash "$RC" render
+grep -q '^\[tiers.resume\]$'         "$cfg" || fail "missing [tiers.resume]"
+grep -q '^\[tiers.next_up\]$'        "$cfg" || fail "missing [tiers.next_up]"
+grep -q '^\[tiers.recently_added\]$' "$cfg" || fail "missing [tiers.recently_added]"
+# Scope the default assertions to each tier block: an unscoped grep would pass if
+# any single tier had the default even when another did not.
+for t in resume next_up recently_added; do
+    awk -v h="[tiers.$t]" '$0==h{f=1;next} f&&/^enabled = /{print;exit}'   "$cfg" | grep -q 'enabled = true' || fail "tier $t enabled default not true"
+    awk -v h="[tiers.$t]" '$0==h{f=1;next} f&&/^max_items = /{print;exit}' "$cfg" | grep -q 'max_items = 0'   || fail "tier $t max_items default not 0"
+done
+
+# --- tiers: explicit values incl. a disabled tier and a cap ---
+{ printf 'TIER_RESUME_ENABLED="1"\nTIER_RESUME_MAX="15"\n'; \
+  printf 'TIER_NEXTUP_ENABLED="0"\nTIER_NEXTUP_MAX="0"\n'; \
+  printf 'TIER_RECENT_ENABLED="1"\nTIER_RECENT_MAX="5"\n'; } >> "$WAP_FLASH/watch-aware-preloader.cfg"
+bash "$RC" render
+# resume enabled=true max=15; next_up enabled=false; recently_added max=5
+awk '/^\[tiers.next_up\]$/{f=1;next} f&&/^enabled = /{print;exit}' "$cfg" | grep -q 'enabled = false' || fail "next_up not disabled"
+awk '/^\[tiers.resume\]$/{f=1;next} f&&/^max_items = /{print;exit}' "$cfg" | grep -q 'max_items = 15' || fail "resume max not 15"
+
+# --- write-pickers: assembles pickers.json from the three read-only
+# subcommands, atomically and world-readable. ---
+STUB_BIN="$work/preloadd"
+cat > "$STUB_BIN" <<'STUB'
+#!/bin/bash
+case "$1" in
+  list-users)
+    python3 -m json.tool <<'JSON'
+[{"id":"id-a","name":"Alice"}]
+JSON
+    ;;
+  list-libraries)
+    python3 -m json.tool <<'JSON'
+[{"id":"lib-1","name":"Movies","type":"movies"}]
+JSON
+    ;;
+  detect-pathmaps)
+    python3 -m json.tool <<'JSON'
+{"rules":[{"from":"/share/Movies","to":"/mnt/user/Movies","source":"docker"}],"unraid_unc_fallback":true}
+JSON
+    ;;
+  *) exit 2 ;;
+esac
+STUB
+chmod +x "$STUB_BIN"
+printf 'SERVER_URL="http://tower:8096"\n' >> "$WAP_FLASH/watch-aware-preloader.cfg"
+WAP_PICKERS_PATH="$work/pickers.json" WAP_BIN="$STUB_BIN" "$RC" write-pickers
+grep -q '"server_url": *"http://tower:8096"' "$work/pickers.json" || fail "server_url not in cache"
+grep -q '"id": "id-a"' "$work/pickers.json" || fail "users not merged"
+grep -q '"id": "lib-1"' "$work/pickers.json" || fail "libraries not merged"
+grep -q '"source": "docker"' "$work/pickers.json" || fail "pathmaps not merged"
+# world-readable
+perms="$(stat -c '%a' "$work/pickers.json" 2>/dev/null || stat -f '%Lp' "$work/pickers.json")"
+[ "$perms" = "644" ] || fail "pickers.json not 0644 (got $perms)"
+
+# --- write-pickers JSON-escaping: a SERVER_URL containing a double-quote
+# (hand-edited .cfg, not run through the presave sanitizer) must be escaped in
+# pickers.json rather than corrupting the JSON structure. ---
+printf 'SERVER_URL="http://tow\"er:8096"\n' >> "$WAP_FLASH/watch-aware-preloader.cfg"
+WAP_PICKERS_PATH="$work/pickers.json" WAP_BIN="$STUB_BIN" "$RC" write-pickers
+grep -q 'tow\\"er' "$work/pickers.json" || fail "server_url quote not escaped in pickers.json"
+if python3 -c 'import json' 2>/dev/null; then
+    python3 - "$work/pickers.json" <<'PY'
+import sys, json
+with open(sys.argv[1]) as fh:
+    d = json.load(fh)
+assert d["server_url"] == 'http://tow"er:8096', d["server_url"]
+print("  pickers.json valid JSON, server_url round-trips (json)")
+PY
+fi
 
 echo "PASS: rc.preloadd render"

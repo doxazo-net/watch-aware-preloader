@@ -19,7 +19,8 @@ SECRETS="${FLASH}/secrets.toml"
 CFG="${FLASH}/${PLUGIN}.cfg"
 DEFAULT_CFG="${RUNTIME}/default.cfg"
 CRON="${FLASH}/${PLUGIN}.cron"
-BIN="${RUNTIME}/preloadd"
+BIN="${WAP_BIN:-${RUNTIME}/preloadd}"
+PICKERS="${WAP_PICKERS_PATH:-/var/local/preloadd/pickers.json}"
 # Cron-collation marker (PRs #24/#25). update_cron only collates a plugin's .cron
 # fragment when /var/log/plugins/<name>.plg is present; see ensure_marker.
 PLUGIN_LOG_DIR="${WAP_PLUGIN_LOG_DIR:-/var/log/plugins}"
@@ -69,6 +70,24 @@ toml_escape() {
     printf '%s' "$s"
 }
 
+# json_escape STR -> STR with backslash and double-quote escaped for embedding
+# in a JSON string. Control chars are already stripped upstream (presave), and
+# neither char appears in a well-formed URL; this decouples pickers.json from
+# that assumption for hand-edited .cfg values.
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    # Strip raw control chars (0x01-0x1F, 0x7F): unescaped they are invalid inside
+    # a JSON string, and none is legitimate in a URL. presave strips them, but a
+    # hand-edited .cfg may not. Use LC_ALL=C tr (like toml_escape) so the strip is
+    # byte-based and locale-independent - a bash bracket range can be collation-
+    # sensitive. The trailing sentinel protects any trailing newline.
+    s="$(LC_ALL=C printf '%sX' "$s" | LC_ALL=C tr -d '\001-\037\177')"
+    s="${s%X}"
+    printf '%s' "$s"
+}
+
 # num_or VALUE DEFAULT -> VALUE if it is a non-negative integer, else DEFAULT.
 # Numeric fields are rendered UNQUOTED, so a non-numeric injected value would be
 # a TOML injection just like an unescaped string; validate rather than escape.
@@ -91,6 +110,15 @@ num_min1() {
     else
         printf '%s' "$1"
     fi
+}
+
+# cfg_bool VALUE -> "true" if VALUE is a truthy flag (1/true/yes/on, any case),
+# else "false". Renders a bare TOML boolean for the [tiers.*] enabled fields.
+cfg_bool() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        1 | true | yes | on) printf 'true' ;;
+        *) printf 'false' ;;
+    esac
 }
 
 # csv_to_toml_array "a, b" -> ["a", "b"] ; "" -> []
@@ -199,10 +227,11 @@ render() {
     local src="${CFG}"
     [ -f "$src" ] || src="${DEFAULT_CFG}"
 
-    local server_type server_url users ram target minh maxh tailmb maps interval
+    local server_type server_url users libraries ram target minh maxh tailmb maps interval
     server_type="$(cfg_get "$src" SERVER_TYPE emby)"
     server_url="$(cfg_get "$src" SERVER_URL "http://localhost:8096")"
     users="$(cfg_get "$src" USERS "")"
+    libraries="$(cfg_get "$src" LIBRARIES "")"
     ram="$(cfg_get "$src" RAM_PERCENT 50)"
     target="$(cfg_get "$src" TARGET_SECONDS 20)"
     minh="$(cfg_get "$src" MIN_HEAD_MB 8)"
@@ -210,6 +239,14 @@ render() {
     tailmb="$(cfg_get "$src" TAIL_MB 1)"
     maps="$(cfg_get "$src" PATH_MAPS "")"
     interval="$(cfg_get "$src" CRON_INTERVAL 15)"
+
+    local tr_en tr_max tn_en tn_max tc_en tc_max
+    tr_en="$(cfg_bool "$(cfg_get "$src" TIER_RESUME_ENABLED 1)")"
+    tr_max="$(num_or "$(cfg_get "$src" TIER_RESUME_MAX 0)" 0)"
+    tn_en="$(cfg_bool "$(cfg_get "$src" TIER_NEXTUP_ENABLED 1)")"
+    tn_max="$(num_or "$(cfg_get "$src" TIER_NEXTUP_MAX 0)" 0)"
+    tc_en="$(cfg_bool "$(cfg_get "$src" TIER_RECENT_ENABLED 1)")"
+    tc_max="$(num_or "$(cfg_get "$src" TIER_RECENT_MAX 0)" 0)"
 
     # Escape string scalars for their TOML basic strings; validate numerics
     # (rendered unquoted) so neither can inject into config.toml.
@@ -222,8 +259,9 @@ render() {
     tailmb="$(num_or "$tailmb" 1)"
     interval="$(num_min1 "$interval" 15)"
 
-    local users_toml path_map_toml
+    local users_toml libraries_toml path_map_toml
     users_toml="$(csv_to_toml_array "$users")"
+    libraries_toml="$(csv_to_toml_array "$libraries")"
     path_map_toml="$(render_path_maps "$maps")"
 
     umask 077
@@ -240,6 +278,21 @@ url = "${server_url}"
 
 [users]
 enabled = ${users_toml}
+
+[libraries]
+enabled = ${libraries_toml}
+
+[tiers.resume]
+enabled = ${tr_en}
+max_items = ${tr_max}
+
+[tiers.next_up]
+enabled = ${tn_en}
+max_items = ${tn_max}
+
+[tiers.recently_added]
+enabled = ${tc_en}
+max_items = ${tc_max}
 
 [preload]
 ram_percent = ${ram}
@@ -280,8 +333,42 @@ test_connection() {
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "X-Emby-Token: ${token}" "${url}/System/Info" || true)"
     if [ "$code" = "200" ]; then
         echo "OK: server reachable and API key accepted."
+        if write_pickers; then
+            echo "Pickers refreshed."
+        else
+            echo "Note: could not refresh user/library pickers (see log)."
+        fi
     else
         echo "FAIL: server reachable but API key rejected (HTTP ${code})."
+        return 1
+    fi
+}
+
+# write_pickers: run the read-only subcommands and assemble pickers.json for the
+# settings page. Root-only reads (secrets.toml via the binary). Writes atomically
+# and world-readable; only overwrites the cache when ALL THREE subcommands
+# succeed, so a transient failure keeps the last good cache (fail loud).
+write_pickers() {
+    local src="${CFG}" url users libs maps gen tmp
+    [ -f "$src" ] || src="${DEFAULT_CFG}"
+    url="$(cfg_get "$src" SERVER_URL "")"
+    users="$("${BIN}" list-users -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: list-users failed" >&2; return 1; }
+    libs="$("${BIN}" list-libraries -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: list-libraries failed" >&2; return 1; }
+    maps="$("${BIN}" detect-pathmaps -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: detect-pathmaps failed" >&2; return 1; }
+    gen="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    url="$(json_escape "$url")"
+    # Guard every filesystem op: write_pickers is best-effort (test_connection must
+    # not fail when the cache cannot be written, e.g. a full/readonly /var), so a
+    # failure returns non-zero and cleans up the temp file rather than letting
+    # set -e abort the caller or leaving a partial cache behind.
+    mkdir -p "$(dirname "${PICKERS}")" || { echo "write_pickers: mkdir failed" >&2; return 1; }
+    tmp="$(mktemp "${PICKERS}.XXXXXX")" || { echo "write_pickers: mktemp failed" >&2; return 1; }
+    if ! { printf '{"generated_at":"%s","server_url":"%s","users":%s,"libraries":%s,"pathmaps":%s}\n' \
+        "$gen" "$url" "$users" "$libs" "$maps" > "$tmp" \
+        && chmod 0644 "$tmp" \
+        && mv -f "$tmp" "${PICKERS}"; }; then
+        echo "write_pickers: cache write failed" >&2
+        rm -f "$tmp"
         return 1
     fi
 }
@@ -325,7 +412,8 @@ case "${1:-}" in
     render)   render ;;
     seed)     seed ;;
     test)     test_connection ;;
+    write-pickers) write_pickers ;;
     run-now)  run_now ;;
     remove)   remove_cron ;;
-    *) echo "usage: rc.preloadd {install|update|render|seed|test|run-now|remove}" >&2; exit 1 ;;
+    *) echo "usage: rc.preloadd {install|update|render|seed|test|write-pickers|run-now|remove}" >&2; exit 1 ;;
 esac

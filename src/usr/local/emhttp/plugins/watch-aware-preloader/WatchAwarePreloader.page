@@ -26,6 +26,29 @@ global $var;
 $wapCsrf = $var['csrf_token'] ?? '';
 require_once "{$docroot}/plugins/watch-aware-preloader/include/secrets.php";
 $wapKeySet = wap_api_key_is_set(wap_default_secret_path());
+require_once "{$docroot}/plugins/watch-aware-preloader/include/pickers.php";
+$wapPickers    = wap_read_pickers(wap_default_pickers_path());
+$wapServerUrl  = (string) ($wapCfg['SERVER_URL'] ?? 'http://localhost:8096');
+$wapConnected  = wap_pickers_fresh($wapPickers, $wapServerUrl);
+// Current selections (csv of ids, or legacy names) for checkbox state.
+$wapSelUsers   = array_filter(array_map('trim', explode(',', (string) ($wapCfg['USERS'] ?? ''))), static fn (string $s): bool => $s !== '');
+$wapSelLibs    = array_filter(array_map('trim', explode(',', (string) ($wapCfg['LIBRARIES'] ?? ''))), static fn (string $s): bool => $s !== '');
+// Preserve the current selection as a hidden scalar in the gate / empty states:
+// no USERS[]/LIBRARIES[] checkbox is posted there, so presave would normalize the
+// field to "" and silently clear a saved selection on any unrelated save.
+$wapCurUsers   = implode(',', $wapSelUsers);
+$wapCurLibs    = implode(',', $wapSelLibs);
+// Auto-detected path-map rules for the read-only table (hoisted so the inline
+// island below opens directly with the connect-gate check).
+$wapMaps       = wap_picker_pathmaps($wapPickers);
+$wapRules      = (\is_array($wapMaps['rules'] ?? null)) ? $wapMaps['rules'] : [];
+// Signal tiers for the dial rows: [cfg-prefix, label]. Default enabled (checked)
+// and max 0 when the cfg key is absent, preserving pre-dials behavior.
+$wapTiers = [
+    ['RESUME', 'Resume points'],
+    ['NEXTUP', 'Next-up episodes'],
+    ['RECENT', 'Recently added'],
+];
 ?>
 
 <table class="tablesorter shift ups">
@@ -66,10 +89,73 @@ $wapKeySet = wap_api_key_is_set(wap_default_secret_path());
 <blockquote class="inline_help">Base URL of your Emby server, e.g. http://tower:8096</blockquote>
 
 <dl>
-    <dt><label for="wap_users">Users</label></dt>
-    <dd><input type="text" id="wap_users" name="USERS" value="<?= htmlspecialchars((string) ($wapCfg['USERS'] ?? '')) ?>"></dd>
+    <dt>Users to preload</dt>
+    <dd>
+    <?php if (!$wapConnected) { ?>
+        <em>Connect to a server to choose users: save the Server URL and API key above, then click <strong>Test connection</strong>.</em>
+        <input type="hidden" name="USERS" value="<?= htmlspecialchars($wapCurUsers) ?>">
+    <?php } elseif (($wapUsers = wap_picker_users($wapPickers)) === []) { ?>
+        <em>The server returned no users.</em>
+        <input type="hidden" name="USERS" value="<?= htmlspecialchars($wapCurUsers) ?>">
+    <?php } else {
+        foreach ($wapUsers as $u) {
+            $id = (string) ($u['id'] ?? '');
+            if ($id === '') {
+                continue; // an entry with no id cannot be persisted (empties are dropped)
+            }
+            $nm = (string) ($u['name'] ?? $id);
+            $checked = (\in_array($id, $wapSelUsers, true) || \in_array($nm, $wapSelUsers, true)) ? ' checked' : '';
+            ?>
+        <label style="display:block"><input type="checkbox" name="USERS[]" value="<?= htmlspecialchars($id) ?>"<?= $checked ?>> <?= htmlspecialchars($nm) ?></label>
+    <?php }
+        } ?>
+    </dd>
 </dl>
-<blockquote class="inline_help">Comma-separated user names to preload for. Leave empty to include all users.</blockquote>
+<blockquote class="inline_help">Users whose watch-state is preloaded. Leave all unchecked to include every user.</blockquote>
+
+<dl>
+    <dt>Libraries to scope</dt>
+    <dd>
+    <?php if (!$wapConnected) { ?>
+        <em>Connect to a server to choose libraries.</em>
+        <input type="hidden" name="LIBRARIES" value="<?= htmlspecialchars($wapCurLibs) ?>">
+    <?php } elseif (($wapLibs = wap_picker_libraries($wapPickers)) === []) { ?>
+        <em>The server returned no libraries.</em>
+        <input type="hidden" name="LIBRARIES" value="<?= htmlspecialchars($wapCurLibs) ?>">
+    <?php } else {
+        foreach ($wapLibs as $l) {
+            $id = (string) ($l['id'] ?? '');
+            if ($id === '') {
+                continue; // an entry with no id cannot be persisted (empties are dropped)
+            }
+            $nm = (string) ($l['name'] ?? $id);
+            $checked = \in_array($id, $wapSelLibs, true) ? ' checked' : '';
+            ?>
+        <label style="display:block"><input type="checkbox" name="LIBRARIES[]" value="<?= htmlspecialchars($id) ?>"<?= $checked ?>> <?= htmlspecialchars($nm) ?></label>
+    <?php }
+        } ?>
+    </dd>
+</dl>
+<blockquote class="inline_help">Only items in the checked libraries are preloaded. Leave all unchecked to include every library.</blockquote>
+
+<dl>
+    <dt>Signal tiers</dt>
+    <dd>
+    <?php foreach ($wapTiers as [$wapTk, $wapTlabel]) {
+        // Match rc.preloadd's cfg_bool truthy set (1/true/yes/on) so the checkbox
+        // reflects exactly what rc render will emit, even for a hand-edited .cfg.
+        $wapTEn  = \in_array(strtolower((string) ($wapCfg["TIER_{$wapTk}_ENABLED"] ?? '1')), ['1', 'true', 'yes', 'on'], true);
+        $wapTMax = (int) ($wapCfg["TIER_{$wapTk}_MAX"] ?? 0);
+        ?>
+        <label style="display:block">
+            <input type="checkbox" name="TIER_<?= $wapTk ?>_ENABLED" value="1"<?= $wapTEn ? ' checked' : '' ?>>
+            <?= htmlspecialchars($wapTlabel) ?>
+            &nbsp; max items <input type="number" name="TIER_<?= $wapTk ?>_MAX" min="0" max="10000" step="1" value="<?= $wapTMax ?>" style="width:6em">
+        </label>
+    <?php } ?>
+    </dd>
+</dl>
+<blockquote class="inline_help">Which watch-signals contribute to the preload set, and a per-user item cap for each (0 = no limit). Priority order is fixed; unchecking a tier skips it entirely.</blockquote>
 
 <dl>
     <dt><label for="wap_ram_percent">RAM budget (percent)</label></dt>
@@ -84,10 +170,30 @@ $wapKeySet = wap_api_key_is_set(wap_default_secret_path());
 <blockquote class="inline_help">Seconds of playback to keep warm (covers disk spin-up).</blockquote>
 
 <dl>
-    <dt><label for="wap_path_maps">Path maps</label></dt>
-    <dd><input type="text" id="wap_path_maps" name="PATH_MAPS" value="<?= htmlspecialchars((string) ($wapCfg['PATH_MAPS'] ?? '/share=>/mnt/user')) ?>"></dd>
+    <dt>Detected path maps</dt>
+    <dd>
+    <?php if (!$wapConnected) { ?>
+        <em>Connect and Test connection to auto-detect Docker bind-mount path maps.</em>
+    <?php } elseif ($wapRules === []) { ?>
+        <em>No explicit path maps detected; the Unraid share-name convention will be used.</em>
+    <?php } else { ?>
+        <table class="tablesorter"><thead><tr><th>From</th><th>To</th><th>Source</th></tr></thead><tbody>
+        <?php foreach ($wapRules as $r) { ?>
+            <tr><td><?= htmlspecialchars((string) ($r['from'] ?? '')) ?></td><td><?= htmlspecialchars((string) ($r['to'] ?? '')) ?></td><td><?= htmlspecialchars((string) ($r['source'] ?? '')) ?></td></tr>
+        <?php } ?>
+        </tbody></table>
+        <?php if (!empty($wapMaps['unraid_unc_fallback'])) { ?>
+        <blockquote class="inline_help">Plus the Unraid UNC / share-name convention for any unmatched <code>\\host\Share</code> or <code>/share/Share</code> path.</blockquote>
+        <?php } ?>
+    <?php } ?>
+    </dd>
 </dl>
-<blockquote class="inline_help">Map server paths to host paths as from=&gt;to pairs, separated by semicolons, e.g. /share=&gt;/mnt/user; /media=&gt;/mnt/user/media</blockquote>
+
+<dl>
+    <dt><label for="wap_path_maps">Advanced: manual path-map override</label></dt>
+    <dd><input type="text" id="wap_path_maps" name="PATH_MAPS" value="<?= htmlspecialchars((string) ($wapCfg['PATH_MAPS'] ?? '')) ?>"></dd>
+</dl>
+<blockquote class="inline_help">Optional extra <code>from=&gt;to</code> pairs separated by semicolons; these override auto-detected rules. Usually leave blank.</blockquote>
 
 <dl>
     <dt><label for="wap_cron_interval">Schedule interval (minutes)</label></dt>

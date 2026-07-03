@@ -27,6 +27,48 @@ function wap_cfg_sanitize_str(string $v): string
 }
 
 /**
+ * Normalize a posted list-or-scalar field into a sanitized comma-separated cfg
+ * value. Checkbox pickers post an array (USERS[]/LIBRARIES[]); a legacy free-text
+ * field posts a scalar. Each element is run through wap_cfg_sanitize_str; empty
+ * elements are dropped.
+ *
+ * @param mixed $v array<int,scalar>|scalar|null
+ */
+function wap_cfg_csv_from_list(mixed $v): string
+{
+    if (\is_array($v)) {
+        $parts = [];
+        foreach ($v as $item) {
+            if (!\is_scalar($item)) {
+                continue;
+            }
+            // Drop commas too: items are joined with "," and split back with
+            // explode(",") on the page, so a comma in an id/name would split
+            // into bogus selections. (Emby ids are GUIDs, but harden anyway.)
+            $s = str_replace(',', '', wap_cfg_sanitize_str((string) $item));
+            if ($s !== '') {
+                $parts[] = $s;
+            }
+        }
+
+        return implode(',', $parts);
+    }
+
+    return wap_cfg_sanitize_str((string) ($v ?? ''));
+}
+
+/**
+ * A checkbox posts a value only when checked, so a present value other than the
+ * literal "0" means enabled; absence (or a "0") means disabled. Returns "1" or "0".
+ *
+ * @param mixed $v
+ */
+function wap_cfg_checkbox(mixed $v): string
+{
+    return (\is_scalar($v) && (string) $v !== '' && (string) $v !== '0') ? '1' : '0';
+}
+
+/**
  * Coerce a posted numeric field to an int within [$min, $max], falling back to
  * $default when the value is not a plain decimal or is out of range. Only decimal
  * digits (optionally signed, optionally with a fractional part that is then
@@ -68,10 +110,16 @@ function wap_sanitize_settings_post(array &$post): void
     $url = wap_cfg_sanitize_str((string) ($post['SERVER_URL'] ?? ''));
     $post['SERVER_URL'] = ($url === '') ? 'http://localhost:8096' : $url;
 
-    $post['USERS']     = wap_cfg_sanitize_str((string) ($post['USERS'] ?? ''));
+    $post['USERS']     = wap_cfg_csv_from_list($post['USERS'] ?? '');
+    $post['LIBRARIES'] = wap_cfg_csv_from_list($post['LIBRARIES'] ?? '');
     $post['PATH_MAPS'] = wap_cfg_sanitize_str((string) ($post['PATH_MAPS'] ?? ''));
 
     $post['RAM_PERCENT']    = (string) wap_cfg_clamp_int($post['RAM_PERCENT'] ?? null, 1, 100, 50);
     $post['TARGET_SECONDS'] = (string) wap_cfg_clamp_int($post['TARGET_SECONDS'] ?? null, 1, 86400, 20);
     $post['CRON_INTERVAL']  = (string) wap_cfg_clamp_int($post['CRON_INTERVAL'] ?? null, 1, 59, 15);
+
+    foreach (['RESUME', 'NEXTUP', 'RECENT'] as $t) {
+        $post["TIER_{$t}_ENABLED"] = wap_cfg_checkbox($post["TIER_{$t}_ENABLED"] ?? null);
+        $post["TIER_{$t}_MAX"]     = (string) wap_cfg_clamp_int($post["TIER_{$t}_MAX"] ?? null, 0, 10000, 0);
+    }
 }
