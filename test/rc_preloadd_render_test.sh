@@ -203,4 +203,20 @@ grep -q '"source":"docker"' "$work/pickers.json" || fail "pathmaps not merged"
 perms="$(stat -c '%a' "$work/pickers.json" 2>/dev/null || stat -f '%Lp' "$work/pickers.json")"
 [ "$perms" = "644" ] || fail "pickers.json not 0644 (got $perms)"
 
+# --- write-pickers JSON-escaping: a SERVER_URL containing a double-quote
+# (hand-edited .cfg, not run through the presave sanitizer) must be escaped in
+# pickers.json rather than corrupting the JSON structure. ---
+printf 'SERVER_URL="http://tow\"er:8096"\n' >> "$WAP_FLASH/watch-aware-preloader.cfg"
+WAP_PICKERS_PATH="$work/pickers.json" WAP_BIN="$STUB_BIN" "$RC" write-pickers
+grep -q 'tow\\"er' "$work/pickers.json" || fail "server_url quote not escaped in pickers.json"
+if python3 -c 'import json' 2>/dev/null; then
+    python3 - "$work/pickers.json" <<'PY'
+import sys, json
+with open(sys.argv[1]) as fh:
+    d = json.load(fh)
+assert d["server_url"] == 'http://tow"er:8096', d["server_url"]
+print("  pickers.json valid JSON, server_url round-trips (json)")
+PY
+fi
+
 echo "PASS: rc.preloadd render"

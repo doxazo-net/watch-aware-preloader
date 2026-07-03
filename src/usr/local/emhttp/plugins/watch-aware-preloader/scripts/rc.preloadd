@@ -70,6 +70,17 @@ toml_escape() {
     printf '%s' "$s"
 }
 
+# json_escape STR -> STR with backslash and double-quote escaped for embedding
+# in a JSON string. Control chars are already stripped upstream (presave), and
+# neither char appears in a well-formed URL; this decouples pickers.json from
+# that assumption for hand-edited .cfg values.
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    printf '%s' "$s"
+}
+
 # num_or VALUE DEFAULT -> VALUE if it is a non-negative integer, else DEFAULT.
 # Numeric fields are rendered UNQUOTED, so a non-numeric injected value would be
 # a TOML injection just like an unescaped string; validate rather than escape.
@@ -309,6 +320,7 @@ write_pickers() {
     libs="$("${BIN}" list-libraries -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: list-libraries failed" >&2; return 1; }
     maps="$("${BIN}" detect-pathmaps -config "${CONFIG}" 2>/dev/null)" || { echo "write_pickers: detect-pathmaps failed" >&2; return 1; }
     gen="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    url="$(json_escape "$url")"
     mkdir -p "$(dirname "${PICKERS}")"
     tmp="$(mktemp "${PICKERS}.XXXXXX")"
     printf '{"generated_at":"%s","server_url":"%s","users":%s,"libraries":%s,"pathmaps":%s}\n' \
