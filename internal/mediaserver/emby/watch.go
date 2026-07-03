@@ -117,7 +117,13 @@ func (c *Client) Libraries(ctx context.Context) ([]Library, error) {
 
 // Resume returns the user's in-progress items with their resume offsets.
 func (c *Client) Resume(ctx context.Context, userID string) ([]core.MediaItem, error) {
-	return c.itemsTo(ctx, "/Users/"+userID+"/Items/Resume", mediaFields(), userID)
+	// Emby's /Items/Resume returns zero items unless MediaTypes=Video is set,
+	// which silently disabled the resume tier on real servers (verified against
+	// a live Emby: the same call returns 0 without this filter and the full
+	// in-progress list with it). RecentlyAdded avoids this via IncludeItemTypes.
+	q := mediaFields()
+	q.Set("MediaTypes", "Video")
+	return c.itemsTo(ctx, "/Users/"+userID+"/Items/Resume", q, userID)
 }
 
 // NextUp returns the next episode of each series the user is watching.
