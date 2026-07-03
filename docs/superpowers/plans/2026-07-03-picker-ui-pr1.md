@@ -290,7 +290,7 @@ write_pickers() {
 }
 ```
 
-Note: `server_url` is a `toml_escape`-clean cfg value (already sanitized by presave), so it needs no further JSON escaping for the URLs this field holds; the three JSON payloads are emitted by the binary and embedded verbatim.
+Note: `server_url` is JSON-escaped via `json_escape` before embedding (a hand-edited `.cfg` could carry a quote/backslash/control char even though presave normally strips them); the three JSON payloads are emitted by the binary as valid JSON and embedded verbatim.
 
 Add the dispatch case (alongside `test)` / `run-now)`):
 

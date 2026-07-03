@@ -42,7 +42,10 @@ function wap_cfg_csv_from_list(mixed $v): string
             if (!\is_scalar($item)) {
                 continue;
             }
-            $s = wap_cfg_sanitize_str((string) $item);
+            // Drop commas too: items are joined with "," and split back with
+            // explode(",") on the page, so a comma in an id/name would split
+            // into bogus selections. (Emby ids are GUIDs, but harden anyway.)
+            $s = str_replace(',', '', wap_cfg_sanitize_str((string) $item));
             if ($s !== '') {
                 $parts[] = $s;
             }

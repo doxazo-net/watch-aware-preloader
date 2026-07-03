@@ -32,8 +32,8 @@ on the flash secret.
 `rc.preloadd test` (already root, already the "connect" action) gains a step: on
 a **successful** connection test it runs the three read-only subcommands and
 writes a world-readable `pickers.json` next to `status.json`
-(`/var/local/preloadd/pickers.json`, overridable via the same `WAP_STATUS_PATH`
-dir convention the rc script already uses for testability):
+(`/var/local/preloadd/pickers.json`, overridable via `WAP_PICKERS_PATH`, the same
+kind of env override the rc script already uses for testability):
 
 ```json
 {
@@ -100,7 +100,7 @@ then `render` emits `users.enabled` / `libraries.enabled` as TOML arrays (verify
 `ResolveUserIDs` matches each configured entry against **both** `u.ID` and
 `u.Name`:
 
-```
+```text
 for each user u:
   if enabled contains u.ID OR enabled contains u.Name -> include u.ID
 ```

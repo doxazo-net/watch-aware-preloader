@@ -75,6 +75,7 @@ check(wap_cfg_csv_from_list(['id-a', '', ' id-b ']) === 'id-a,id-b', 'array trim
 check(wap_cfg_csv_from_list('legacy,names') === 'legacy,names', 'scalar passes through sanitized');
 check(wap_cfg_csv_from_list(["a\"b", 'c']) === 'ab,c', 'array elements sanitized');
 check(wap_cfg_csv_from_list(['a', ['nested'], 'b']) === 'a,b', 'non-scalar array items skipped');
+check(wap_cfg_csv_from_list(['Movies, TV', 'x']) === 'Movies TV,x', 'commas stripped from items (delimiter safety)');
 check(wap_cfg_csv_from_list(null) === '', 'null yields empty string');
 
 // --- wap_sanitize_settings_post: USERS[]/LIBRARIES[] arrays ---

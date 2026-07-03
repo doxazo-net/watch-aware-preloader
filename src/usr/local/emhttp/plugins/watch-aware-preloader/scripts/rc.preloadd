@@ -80,8 +80,11 @@ json_escape() {
     s="${s//\"/\\\"}"
     # Strip raw control chars (0x01-0x1F, 0x7F): unescaped they are invalid inside
     # a JSON string, and none is legitimate in a URL. presave strips them, but a
-    # hand-edited .cfg may not, so strip here too rather than emit invalid JSON.
-    s="${s//[$'\x01'-$'\x1f'$'\x7f']/}"
+    # hand-edited .cfg may not. Use LC_ALL=C tr (like toml_escape) so the strip is
+    # byte-based and locale-independent - a bash bracket range can be collation-
+    # sensitive. The trailing sentinel protects any trailing newline.
+    s="$(LC_ALL=C printf '%sX' "$s" | LC_ALL=C tr -d '\001-\037\177')"
+    s="${s%X}"
     printf '%s' "$s"
 }
 
