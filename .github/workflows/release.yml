@@ -77,6 +77,11 @@ jobs:
           if [ -z "${changelog}" ]; then
             changelog="Release ${PLUGIN_VERSION}"
           fi
+          # The changelog is injected into a <![CDATA[ ... ]]> block. A literal
+          # "]]>" in the tag message would terminate the CDATA early and yield a
+          # malformed .plg, so split it the canonical way ("]]>" -> "]]]]><![CDATA[>":
+          # close CDATA after "]]", emit "]]>", reopen CDATA, then ">").
+          changelog="${changelog//]]>/]]]]><![CDATA[>}"
           export PLUGIN_CHANGELOG="${changelog}"
           # Render with the stdlib only - no pip/venv/network. plugin.j2 uses just
           # {{ env['VAR'] }} substitution, so a tiny regex renderer covers it and
@@ -117,6 +122,13 @@ jobs:
             || { echo "render check failed: version missing from .plg" >&2; exit 1; }
           grep -qF "${PLUGIN_CHECKSUM}" release/watch-aware-preloader.plg \
             || { echo "render check failed: checksum missing from .plg" >&2; exit 1; }
+          # Fail loudly if the rendered .plg is not well-formed XML - e.g. a CDATA
+          # break, or any future template/render drift - rather than publishing a
+          # .plg the Unraid plugin manager rejects only at user install time.
+          # Stdlib xml.etree (expat) only; the .plg is <!DOCTYPE PLUGIN> with no
+          # custom entities, so a plain parse validates well-formedness.
+          python3 -c 'import xml.etree.ElementTree as ET; ET.parse("release/watch-aware-preloader.plg")' \
+            || { echo "render check failed: rendered .plg is not well-formed XML" >&2; exit 1; }
 
       - name: Create draft release, upload assets, then publish (immutable-safe)
         env:
