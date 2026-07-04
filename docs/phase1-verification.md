@@ -117,6 +117,37 @@ spins up faster despite the larger platters) - versus a ~12-50 ms warm read, a
 ~175-200x reduction. Objectively, the preloader takes the entire cold-disk access
 sequence off the playback-start path - not merely the spin-up second.
 
+### Real-player validation (Direct Stream) + the resume cue-warming gap
+
+Driven end to end against a real client (NVIDIA Shield, `PlayMethod=DirectStream`,
+no transcode), monitoring the target disk's `/proc/diskstats` sectors-read while the
+disk was forced to standby. This exposed a gap the synthetic `dd` tests could not,
+because `dd` reads the content directly and never exercises the player's *seek* path.
+
+Subject: a 22 GB 4K remux on a 7200 RPM array disk, resumed ~37 min in. Conclusive
+A/B (same title, disk, resume point, client; only the warmed byte-ranges differ):
+
+| Warmed set | Disk read on resume | Disk | Perceived start |
+|------------|--------------------|------|-----------------|
+| head + resume-content (**cues cold**) | **~200 KB** | spun up (~8.5 s) | "several seconds of wait" |
+| head + resume-content **+ file tail (cues)** | **0 KB** | **stayed in standby** | **"near instant"** |
+
+The only variable was warming the last ~64 MB. **Root cause:** a mid-file resume
+makes the player read the **MKV Cue index, which lives at the EOF**, to locate the
+seek target. Warming the head + resume-content but not the tail leaves that ~200 KB
+index cold - and a spun-down disk cannot serve even 200 KB without a full spin-up.
+
+**Implication:** the preloader's "disk stays asleep" promise is real for
+direct-play / direct-stream clients (the normal way remux libraries are watched),
+**but for resume / next-up targets it must also warm the file tail (the cue index),
+not just the head + resume offset.** Head-start (0:00) playback is unaffected;
+mid-file resume is. Recommended follow-up: add the tail to the warm set for MKV
+resume/next-up targets.
+
+**Also:** browser playback *transcodes* 4K HEVC remuxes - ffmpeg then streams the
+whole file off the platter (~12 MB/s, continuous), which no bounded preload can
+cover. The preloader's value is the direct-play/direct-stream path, not transcoding.
+
 ### Notes / minor issues observed (not filed, per the maintainer's freeze)
 
 - `-verify` logs "residency unavailable on this platform - mincore is Linux-only"
