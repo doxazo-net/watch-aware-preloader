@@ -94,9 +94,9 @@ func TestUnraidUNCFallback(t *testing.T) {
 		ok       bool
 	}{
 		{`\\tower\Movies\Film\a.mkv`, "/mnt/user/Movies/Film/a.mkv", true},
-		{`\\OUTATIME\TV\Show\S01E01.mkv`, "/mnt/user/TV/Show/S01E01.mkv", true}, // host case-agnostic
-		{`\\host\Share`, "/mnt/user/Share", true},                               // no trailing segment
-		{`/mnt/user/Movies/a.mkv`, "/mnt/user/Movies/a.mkv", true},              // host-correct path passes through
+		{`\\TOWER\TV\Show\S01E01.mkv`, "/mnt/user/TV/Show/S01E01.mkv", true}, // host case-agnostic
+		{`\\host\Share`, "/mnt/user/Share", true},                            // no trailing segment
+		{`/mnt/user/Movies/a.mkv`, "/mnt/user/Movies/a.mkv", true},           // host-correct path passes through
 		{`\\host`, "", false},                  // no share segment
 		{`\\host\..\..\etc\passwd`, "", false}, // traversal rejected (escapes /mnt/)
 		{`/data/Movies/a.mkv`, "", false},      // non-/mnt, unmatched -> missing

@@ -18,10 +18,11 @@ script by Marc Gutt (which guesses from filesystem mtime), this derives intent f
 server's own watch state (Emby/Jellyfin): resume points, next-up episodes,
 recently-added, and what each user has been watching.
 
-The approved design and working docs are kept in the local, gitignored
-`docs/private/` tree (specs, plans, verification) - not published to the repo.
-Read the design spec there before implementing. Phase 1 (Go engine MVP, Emby,
-file config) is the first deliverable.
+The approved design and working docs are maintained privately (the gitignored
+`docs/private/` tree: specs, plans, verification) and are not published to the
+repo. The maintainer reads the design spec there before implementing; contributors
+without that tree should open an issue to discuss the design of record. Phase 1
+(Go engine MVP, Emby, file config) is the first deliverable.
 
 **Run model: cron-invoked one-shot is primary** (like Fix Common Problems / Mover),
 not a resident service. `preloadd -once` (also the default) does one full sweep and
