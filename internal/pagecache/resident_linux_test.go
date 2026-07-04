@@ -8,21 +8,18 @@ import (
 )
 
 // These tests execute the real mmap + mincore residency path (residentByMincore)
-// end-to-end through the public Cache surface, complementing the injected-statfs
-// FUSE/timing coverage in resident_dispatch_test.go. t.TempDir() lives on an
-// ordinary (non-FUSE) filesystem, so New()'s real statfs routes Resident to
-// mincore. They only build and run on Linux (mincore is Linux-only), which is the
-// gap #6 closes: the residency path was previously validated by cross-compile only.
-
-// newMincoreCache returns a real Cache. probeBytes/threshold/probeTimeout only
-// affect the FUSE timing branch, which these tests never take, so their values
-// are immaterial here.
-func newMincoreCache() Cache { return New(1<<20, 0, 0, nil) }
+// end-to-end, complementing the FUSE/timing coverage in resident_dispatch_test.go.
+// They pin the residency mechanism by injecting statfs (newTestCache's fuse=false)
+// so dispatch always routes to mincore regardless of which filesystem t.TempDir()
+// happens to sit on; only then does the real mmap + mincore syscall run against a
+// real temp file. They build and run on Linux only (mincore is Linux-only), which
+// is the gap #6 closes: the residency path was previously validated by
+// cross-compile only.
 
 func TestResidentMincoreReportsWarmedRange(t *testing.T) {
 	ps := int64(os.Getpagesize())
 	p := writeFile(t, t.TempDir(), int(16*ps))
-	c := newMincoreCache()
+	c := newTestCache(t, false /*fuse*/, 0)
 
 	// Warm an aligned, multi-page range, then ask mincore how much is resident.
 	length := 8 * ps
@@ -55,7 +52,7 @@ func TestResidentMincoreClampsUnalignedSubPageRange(t *testing.T) {
 	// pageSize (or more), failing the assertion below.
 	ps := int64(os.Getpagesize())
 	p := writeFile(t, t.TempDir(), int(16*ps))
-	c := newMincoreCache()
+	c := newTestCache(t, false /*fuse*/, 0)
 
 	offset := ps - 100 // straddles the boundary between the first two pages
 	length := int64(200)
@@ -81,7 +78,7 @@ func TestResidentMincoreClampsUnalignedRangeAtEOF(t *testing.T) {
 	ps := int64(os.Getpagesize())
 	size := 16 * ps
 	p := writeFile(t, t.TempDir(), int(size))
-	c := newMincoreCache()
+	c := newTestCache(t, false /*fuse*/, 0)
 
 	offset := size - 100   // unaligned, in the final page
 	length := int64(500)   // deliberately overruns EOF
