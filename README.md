@@ -40,6 +40,13 @@ drive **in standby**. Even the file `open`/`stat` didn't wake it. The disk only 
 playback runs *past* the warmed window - and by then it's spinning in the background, no longer
 between you and the first frame.
 
+**Scope (measured, honest):** the win applies to **direct-play / direct-stream** clients - how
+remux libraries are actually watched (Apple TV, Shield, native apps). A client that *transcodes*
+makes the server read the whole file off disk, which no bounded preload can cover. And for a
+*mid-file resume*, the player also reads the container's cue index (at the end of the file) to
+seek - so resume/next-up targets need the file tail warmed too, not just the head; see
+[`docs/phase1-verification.md`](docs/phase1-verification.md).
+
 > Note: this never serves or transcodes media. It only reads byte ranges to make the Linux kernel
 > cache them - the same shared page cache your media server reads from. The page cache is the product.
 
