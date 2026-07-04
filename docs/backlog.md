@@ -60,10 +60,13 @@ guards against the boundary-page over-count noted in the final review (mincore
 counts a full page for the partial first page when `offset` is not page-aligned -
 relevant to resume-offset reads).
 
-## B3: RecentlyAdded bare-array fixture test
+## B3: RecentlyAdded bare-array fixture test - DONE
 
 `emby.RecentlyAdded` decodes `/Users/{id}/Items/Latest` as a BARE JSON array,
-unlike Resume/NextUp which use the `{Items:[...]}` envelope. Only the envelope
-path has a fixture test (`TestResumeMapsFields`). Add a fixture + test for the
-bare-array decode (and light smoke tests for `NextUp`/`NowPlayingIDs`) to lock the
-response shapes against API drift.
+unlike Resume/NextUp which use the `{Items:[...]}` envelope. The bare-array decode
+is covered by `TestRecentlyAddedMapsLeafItems` (`testdata/latest.json`), and the
+envelope path by `TestResumeMapsFields`. The remaining gap - smoke coverage for
+`NextUp` and `NowPlayingIDs` - is now closed: `TestNextUpMapsFields` /
+`TestNextUpQueryParams` (`testdata/nextup.json`) and `TestNowPlayingIDs`
+(`testdata/sessions.json`, exercising the absent/null/empty-Id skip branches).
+All watch-tier response shapes are now locked against API drift.
