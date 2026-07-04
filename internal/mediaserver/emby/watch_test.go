@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -224,8 +225,11 @@ func TestNextUpQueryParams(t *testing.T) {
 	if q.Get("UserId") != "u1" {
 		t.Errorf("UserId = %q, want u1", q.Get("UserId"))
 	}
-	if f := q.Get("Fields"); !strings.Contains(f, "Path") || !strings.Contains(f, "MediaSources") {
-		t.Errorf("Fields = %q, want to contain Path,MediaSources", f)
+	// Exact comma-delimited tokens, not a substring check: these tests lock the
+	// request contract, so "Path" must not be satisfied by a drifted "FilePath".
+	fields := strings.Split(q.Get("Fields"), ",")
+	if !slices.Contains(fields, "Path") || !slices.Contains(fields, "MediaSources") {
+		t.Errorf("Fields = %q, want exact tokens Path and MediaSources", q.Get("Fields"))
 	}
 }
 
@@ -243,7 +247,7 @@ func TestNowPlayingIDs(t *testing.T) {
 	if !ids["playing1"] {
 		t.Errorf("ids missing playing1: %v", ids)
 	}
-	if ids[""] {
-		t.Errorf("empty-id session should be skipped, got %v", ids)
+	if _, ok := ids[""]; ok {
+		t.Errorf("empty-id session should be skipped (no empty key), got %v", ids)
 	}
 }
