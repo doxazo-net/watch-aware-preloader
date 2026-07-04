@@ -17,7 +17,7 @@ func TestLibraries(t *testing.T) {
 			t.Errorf("path = %q, want /Library/VirtualFolders", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`[
-			{"Name":"Movies","ItemId":"111","CollectionType":"movies","Locations":["/share/Movies","/share/4K_Movies"]},
+			{"Name":"Movies","ItemId":"111","CollectionType":"movies","Locations":["/share/Movies","/share/Videos"]},
 			{"Name":"Music","ItemId":"222","CollectionType":null,"Locations":[]}
 		]`))
 	}))
@@ -37,7 +37,7 @@ func TestLibraries(t *testing.T) {
 		t.Errorf("libs[0] = %+v, want {111 Movies movies}", libs[0])
 	}
 	if len(libs[0].Locations) != 2 || libs[0].Locations[0] != "/share/Movies" {
-		t.Errorf("libs[0].Locations = %v, want [/share/Movies /share/4K_Movies]", libs[0].Locations)
+		t.Errorf("libs[0].Locations = %v, want [/share/Movies /share/Videos]", libs[0].Locations)
 	}
 	if libs[1].Type != "" {
 		t.Errorf("null CollectionType should decode to empty string, got %q", libs[1].Type)

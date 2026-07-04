@@ -28,3 +28,6 @@ config.toml
 
 # Plugin binary is built in CI into the src/ tree, never committed
 src/usr/local/emhttp/plugins/watch-aware-preloader/preloadd
+
+# Local-only working docs (design specs, plans, verification) - not published
+docs/private/

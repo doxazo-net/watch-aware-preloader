@@ -22,7 +22,7 @@ func TestNewRejectsBadURL(t *testing.T) {
 
 func TestNewAcceptsPrivateLANHost(t *testing.T) {
 	// The media server normally lives on the LAN; private hosts must be accepted.
-	if _, err := New("http://192.168.1.126:8096", "k", nil); err != nil {
+	if _, err := New("http://tower:8096", "k", nil); err != nil {
 		t.Errorf("private LAN base URL should be accepted, got %v", err)
 	}
 }

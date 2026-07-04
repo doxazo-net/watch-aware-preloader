@@ -34,5 +34,5 @@ make php-lint   # only if you touched plugin/ PHP
 
 ## Design
 
-Substantive changes should trace back to the design spec under `docs/specs/`.
+Substantive changes should trace back to the project's design of record.
 If you're proposing something new, open an issue describing the change first.
