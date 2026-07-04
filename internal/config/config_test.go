@@ -11,7 +11,7 @@ import (
 const sample = `
 [server]
 type = "emby"
-url = "http://192.168.1.126:8096"
+url = "http://tower:8096"
 
 [users]
 enabled = ["jesse", "rachel"]
@@ -38,7 +38,7 @@ func TestLoadValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Server.URL != "http://192.168.1.126:8096" {
+	if c.Server.URL != "http://tower:8096" {
 		t.Errorf("server parsed wrong: %+v", c.Server)
 	}
 	if c.Preload.RAMPercent != 50 || c.Preload.TargetSeconds != 20 {

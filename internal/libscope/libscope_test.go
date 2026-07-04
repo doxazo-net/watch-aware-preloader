@@ -26,7 +26,7 @@ func fakeToHost(p string) (string, bool) {
 }
 
 var libs = []Library{
-	{ID: "111", Locations: []string{"/share/Movies", "/share/4K_Movies"}},
+	{ID: "111", Locations: []string{"/share/Movies", "/share/Videos"}},
 	{ID: "222", Locations: []string{"/share/Music"}},
 }
 
@@ -49,11 +49,11 @@ func TestScopedToSelectedLibrary(t *testing.T) {
 		path string
 		want bool
 	}{
-		{`\\outatime\Movies\Film\a.mkv`, true},      // UNC item in a selected library
-		{`\\outatime\4K_Movies\b.mkv`, true},        // second location of the same library
+		{`\\tower\Movies\Film\a.mkv`, true},         // UNC item in a selected library
+		{`\\tower\Videos\b.mkv`, true},              // second location of the same library
 		{`/share/Movies/c.mkv`, true},               // container-form path in scope
-		{`\\outatime\Music\d.flac`, false},          // Music (222) not selected
-		{`\\outatime\Books\e.epub`, false},          // not in any selected library
+		{`\\tower\Music\d.flac`, false},             // Music (222) not selected
+		{`\\tower\Books\e.epub`, false},             // not in any selected library
 		{`/mnt/user/Movies/already-host.mkv`, true}, // already-host path in scope
 	}
 	for _, c := range cases {
