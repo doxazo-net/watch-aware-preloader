@@ -4,6 +4,7 @@ package pagecache
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -15,6 +16,37 @@ import (
 // real temp file. They build and run on Linux only (mincore is Linux-only), which
 // is the gap #6 closes: the residency path was previously validated by
 // cross-compile only.
+
+func TestResidentMincoreReportsUnwarmedRangeCold(t *testing.T) {
+	// Negative control: a range never faulted into the cache reports zero resident,
+	// proving the positive cases are not vacuously passing (e.g. a Resident that
+	// always returned length). A sparse hole is used deliberately: its pages are
+	// not brought into the page cache until accessed, whereas a file written via
+	// os.WriteFile would already be resident and defeat the control.
+	ps := int64(os.Getpagesize())
+	p := filepath.Join(t.TempDir(), "sparse.bin")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(16 * ps); err != nil { // 16 pages of hole, never written
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c := newTestCache(t, false /*fuse*/, 0)
+	resident, ok, err := c.Resident(p, 0, 8*ps)
+	if err != nil {
+		t.Fatalf("Resident: %v", err)
+	}
+	if !ok {
+		t.Fatal("Resident ok = false, want true (mincore path)")
+	}
+	if resident != 0 {
+		t.Errorf("resident = %d, want 0 for an unwarmed sparse range", resident)
+	}
+}
 
 func TestResidentMincoreReportsWarmedRange(t *testing.T) {
 	ps := int64(os.Getpagesize())
