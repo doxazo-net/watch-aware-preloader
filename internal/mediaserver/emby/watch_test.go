@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -166,5 +167,87 @@ func TestResumeMapsFields(t *testing.T) {
 	}
 	if it.UserID != "u1" {
 		t.Errorf("user id = %q, want u1", it.UserID)
+	}
+}
+
+func TestNextUpMapsFields(t *testing.T) {
+	// NextUp shares the {Items:[]} envelope decode with Resume, so this locks the
+	// leaf-item field mapping (path, bitrate, size, tick-converted runtime, user).
+	c := serveFixture(t, "nextup.json")
+	items, err := c.NextUp(context.Background(), "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("got %d items, want 1", len(items))
+	}
+	it := items[0]
+	if it.ID != "next1" || it.ServerPath != "/share/TV_Shows/Example Series/s02e03.mkv" {
+		t.Errorf("bad id/path: %+v", it)
+	}
+	if it.BitrateBps != 12000000 || it.SizeBytes != 4200000000 {
+		t.Errorf("bad bitrate/size: %+v", it)
+	}
+	// RunTimeTicks 18000000000 / 1e7 = 1800s
+	if it.Runtime != 1800*time.Second {
+		t.Errorf("runtime = %v, want 30m", it.Runtime)
+	}
+	if it.UserID != "u1" {
+		t.Errorf("user id = %q, want u1", it.UserID)
+	}
+}
+
+func TestNextUpQueryParams(t *testing.T) {
+	// NextUp is user-scoped via a UserId query param (not a path segment) and must
+	// request Path,MediaSources so the warmable media info comes back.
+	type req struct {
+		path string
+		q    url.Values
+	}
+	reqCh := make(chan req, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCh <- req{path: r.URL.Path, q: r.URL.Query()}
+		_, _ = w.Write([]byte(`{"Items":[]}`))
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL, "k", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.NextUp(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	got := <-reqCh
+	if got.path != "/Shows/NextUp" {
+		t.Errorf("path = %q, want /Shows/NextUp", got.path)
+	}
+	q := got.q
+	if q.Get("UserId") != "u1" {
+		t.Errorf("UserId = %q, want u1", q.Get("UserId"))
+	}
+	// Exact comma-delimited tokens, not a substring check: these tests lock the
+	// request contract, so "Path" must not be satisfied by a drifted "FilePath".
+	fields := strings.Split(q.Get("Fields"), ",")
+	if !slices.Contains(fields, "Path") || !slices.Contains(fields, "MediaSources") {
+		t.Errorf("Fields = %q, want exact tokens Path and MediaSources", q.Get("Fields"))
+	}
+}
+
+func TestNowPlayingIDs(t *testing.T) {
+	// /Sessions is a bare array; only sessions with a non-empty NowPlayingItem.Id
+	// count. Sessions with the item absent, null, or an empty Id are skipped.
+	c := serveFixture(t, "sessions.json")
+	ids, err := c.NowPlayingIDs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("got %d ids, want 1: %v", len(ids), ids)
+	}
+	if !ids["playing1"] {
+		t.Errorf("ids missing playing1: %v", ids)
+	}
+	if _, ok := ids[""]; ok {
+		t.Errorf("empty-id session should be skipped (no empty key), got %v", ids)
 	}
 }

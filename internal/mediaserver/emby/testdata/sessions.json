@@ -1,0 +1,6 @@
+[
+  { "Id": "sess1", "NowPlayingItem": { "Id": "playing1" } },
+  { "Id": "sess2" },
+  { "Id": "sess3", "NowPlayingItem": null },
+  { "Id": "sess4", "NowPlayingItem": { "Id": "" } }
+]
