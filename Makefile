@@ -74,6 +74,7 @@ php-fix: ## Auto-fix PHP style (PHP-CS-Fixer)
 php-test: ## Run plain-PHP unit tests (test/*_test.php) + the render contract test
 	@for t in test/*_test.php; do [ -e "$$t" ] || continue; echo "== $$t =="; php "$$t" || exit 1; done
 	bash test/rc_preloadd_render_test.sh
+	bash test/plg_render_test.sh
 
 .PHONY: shellcheck
 shellcheck: ## Lint shipped bash (rc.preloadd + test harnesses)

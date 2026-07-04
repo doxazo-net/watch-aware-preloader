@@ -106,6 +106,8 @@ jobs:
           [ "$found" -eq 1 ] || echo "no PHP test scripts yet - skipping"
       - name: rc.preloadd render test (PHP -> bash .cfg contract)
         run: bash test/rc_preloadd_render_test.sh
+      - name: .plg render CDATA safety test (#23)
+        run: bash test/plg_render_test.sh
 
   shellcheck:
     name: ShellCheck
