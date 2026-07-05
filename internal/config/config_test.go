@@ -205,6 +205,14 @@ func TestTierNoBlockAllEnabledViaLoad(t *testing.T) {
 	}
 }
 
+func TestDefaultTailMBIsFallback16(t *testing.T) {
+	var c Config
+	c.applyDefaults(false)
+	if c.Preload.TailMB != 16 {
+		t.Errorf("default TailMB = %d, want 16 (flat fallback)", c.Preload.TailMB)
+	}
+}
+
 func TestValidateProbeTimeout(t *testing.T) {
 	// A positive value below the 15s floor is rejected (it could abort a
 	// legitimate cold read); a negative value is accepted (disables the guard);
