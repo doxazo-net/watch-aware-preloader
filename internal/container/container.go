@@ -5,6 +5,7 @@
 package container
 
 import (
+	"errors"
 	"io"
 	"os"
 )
@@ -36,7 +37,7 @@ type Layout struct {
 // SeekHead, or the resolved CueStart falls outside [0, size) (a bogus or linked
 // segment pointer); callers then fall back to flat tail sizing.
 func Inspect(path string, size int64) (Layout, bool) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path is operator-configured media, inspecting it is this package's purpose
 	if err != nil {
 		return Layout{}, false
 	}
@@ -44,7 +45,7 @@ func Inspect(path string, size int64) (Layout, bool) {
 
 	buf := make([]byte, frontReadCap)
 	n, err := io.ReadFull(f, buf)
-	if err == io.EOF || err == io.ErrUnexpectedEOF {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		buf = buf[:n] // file smaller than frontReadCap
 	} else if err != nil {
 		return Layout{}, false
@@ -139,13 +140,13 @@ func parseSeekHead(buf []byte, start, end int, seek map[int64]int64) {
 			return
 		}
 		body := sp + n + n2
-		if id == idSeek { // master element: descend into it
+		switch id {
+		case idSeek: // master element: descend into it
 			sp = body
 			continue
-		}
-		if id == idSeekID {
+		case idSeekID:
 			curID = beUint(buf, body, int(sz))
-		} else if id == idSeekPosition {
+		case idSeekPosition:
 			if curID >= 0 {
 				if _, dup := seek[curID]; !dup {
 					seek[curID] = beUint(buf, body, int(sz))

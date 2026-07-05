@@ -163,9 +163,10 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 	return stats
 }
 
-// warmRanges holds the byte ranges to warm for a single target: the head window
-// (sized by playback duration, at the resume offset for in-progress items) and
-// the EOF tail, clamped so the two never overlap.
+// warmRanges holds the byte ranges to warm for a single target: the front
+// metadata window (container header, read on open), the content/head window
+// (sized by playback duration, at the resume offset for in-progress items),
+// and the EOF/cue tail, clamped so the three never overlap.
 type warmRanges struct {
 	front            int64 // [0, front) front metadata; 0 = none
 	offset, head     int64
@@ -191,40 +192,62 @@ func (p *Preloader) planWarm(t core.PreloadTarget, hostPath string, size int64) 
 		head = size - offset
 	}
 
-	var front, tailOffset, tail int64
-	parsed := false
-	if seeking && p.inspect != nil {
-		if layout, ok := p.inspect(hostPath, size); ok {
-			parsed = true
-			if layout.FrontEnd > 0 {
-				front = layout.FrontEnd
-				if front > maxFrontBytes {
-					front = maxFrontBytes
-				}
-				if front > offset { // never overlap the content window
-					front = offset
-				}
-			}
-			// A trailing cue index needs its own tail warm; a front-placed cue
-			// index is already covered by the front-metadata window.
-			if layout.CueStart >= front && layout.CueStart < size {
-				tailOffset = layout.CueStart
-				if tailOffset < size-maxTailBytes {
-					tailOffset = size - maxTailBytes
-				}
-				tail = size - tailOffset
-			}
-		}
-	}
+	front, tailOffset, tail, parsed := p.inspectRanges(seeking, hostPath, size, offset)
 	if !parsed && p.cfg.TailBytes > 0 {
 		// Flat fallback tail: non-seeking tiers, or a parse failure.
-		tailOffset = size - p.cfg.TailBytes
-		if tailOffset < 0 {
-			tailOffset = 0
+		tailOffset, tail = flatTail(size, p.cfg.TailBytes)
+	}
+	// The tail must not overlap the content window (keeps the budget accurate).
+	tailOffset, tail = clampTailToContent(tailOffset, tail, offset, head, size)
+	return warmRanges{front: front, offset: offset, head: head, tailOffset: tailOffset, tail: tail}
+}
+
+// inspectRanges parses the container front (for a seeking/resume target) to
+// locate the exact front-metadata and cue-tail ranges. parsed is false when
+// the target isn't seeking, no inspector is configured, or the parse failed;
+// callers then fall back to the flat tail.
+func (p *Preloader) inspectRanges(seeking bool, hostPath string, size, offset int64) (front, tailOffset, tail int64, parsed bool) {
+	if !seeking || p.inspect == nil {
+		return 0, 0, 0, false
+	}
+	layout, ok := p.inspect(hostPath, size)
+	if !ok {
+		return 0, 0, 0, false
+	}
+	if layout.FrontEnd > 0 {
+		front = layout.FrontEnd
+		if front > maxFrontBytes {
+			front = maxFrontBytes
+		}
+		if front > offset { // never overlap the content window
+			front = offset
+		}
+	}
+	// A trailing cue index needs its own tail warm; a front-placed cue index
+	// is already covered by the front-metadata window.
+	if layout.CueStart >= front && layout.CueStart < size {
+		tailOffset = layout.CueStart
+		if tailOffset < size-maxTailBytes {
+			tailOffset = size - maxTailBytes
 		}
 		tail = size - tailOffset
 	}
-	// The tail must not overlap the content window (keeps the budget accurate).
+	return front, tailOffset, tail, true
+}
+
+// flatTail computes the fixed-size tail window from the end of the file.
+func flatTail(size, tailBytes int64) (tailOffset, tail int64) {
+	tailOffset = size - tailBytes
+	if tailOffset < 0 {
+		tailOffset = 0
+	}
+	tail = size - tailOffset
+	return tailOffset, tail
+}
+
+// clampTailToContent pulls the tail forward so it never overlaps the content
+// (head) window, keeping the budget accounting free of double-counted bytes.
+func clampTailToContent(tailOffset, tail, offset, head, size int64) (int64, int64) {
 	if tail > 0 && tailOffset < offset+head {
 		tailOffset = offset + head
 		tail = size - tailOffset
@@ -232,7 +255,7 @@ func (p *Preloader) planWarm(t core.PreloadTarget, hostPath string, size int64) 
 			tail = 0
 		}
 	}
-	return warmRanges{front: front, offset: offset, head: head, tailOffset: tailOffset, tail: tail}
+	return tailOffset, tail
 }
 
 // resident reports whether [offset, length) is already fully page-cache resident.
