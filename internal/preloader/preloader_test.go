@@ -215,16 +215,25 @@ func TestRunWarmedRangesPopulated(t *testing.T) {
 	}
 	stats := p.Run(context.Background(), targets, 1<<40)
 
-	if len(stats.Warmed) != 1 {
-		t.Fatalf("Warmed = %v, want 1 entry", stats.Warmed)
+	if len(stats.Warmed) != 2 {
+		t.Fatalf("Warmed = %v, want 2 entries (head+tail)", stats.Warmed)
 	}
-	want := WarmedRange{
+	wantHead := WarmedRange{
 		Path:   "/mnt/user/TV/a.mkv",
 		Offset: 0,
 		Length: HeadBytes(cfg, item),
 	}
-	if stats.Warmed[0] != want {
-		t.Errorf("Warmed[0] = %+v, want %+v", stats.Warmed[0], want)
+	if stats.Warmed[0] != wantHead {
+		t.Errorf("Warmed[0] = %+v, want %+v", stats.Warmed[0], wantHead)
+	}
+	const size = 5 << 30
+	wantTail := WarmedRange{
+		Path:   "/mnt/user/TV/a.mkv",
+		Offset: size - cfg.TailBytes,
+		Length: cfg.TailBytes,
+	}
+	if stats.Warmed[1] != wantTail {
+		t.Errorf("Warmed[1] = %+v, want %+v", stats.Warmed[1], wantTail)
 	}
 }
 
@@ -258,7 +267,7 @@ func TestRunResumeWarmsFrontAndExactCueTail(t *testing.T) {
 		Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/4K/a.mkv", BitrateBps: 80_000_000, ResumeOffset: 30 * time.Minute},
 		Tier: core.TierResume,
 	}}
-	p.Run(context.Background(), targets, 1<<40)
+	stats := p.Run(context.Background(), targets, 1<<40)
 
 	// Expect three warm calls: front [0,200KiB), head at the resume offset, tail [cueStart,EOF).
 	if len(cache.warmed) != 3 {
@@ -271,6 +280,24 @@ func TestRunResumeWarmsFrontAndExactCueTail(t *testing.T) {
 	tail := cache.warmed[2]
 	if tail.offset != cueStart || tail.length != size-cueStart {
 		t.Errorf("cue tail = offset %d len %d, want offset %d len %d", tail.offset, tail.length, cueStart, size-cueStart)
+	}
+
+	// stats.Warmed must record all three ranges (front, head, tail) so -verify
+	// can check residency of the cue tail, not just the head.
+	if len(stats.Warmed) != 3 {
+		t.Fatalf("Warmed = %v, want 3 entries (front+head+tail)", stats.Warmed)
+	}
+	wantFront := WarmedRange{Path: "/mnt/user/4K/a.mkv", Offset: 0, Length: frontEnd}
+	if stats.Warmed[0] != wantFront {
+		t.Errorf("Warmed[0] = %+v, want %+v", stats.Warmed[0], wantFront)
+	}
+	wantHead := WarmedRange{Path: "/mnt/user/4K/a.mkv", Offset: cache.warmed[1].offset, Length: cache.warmed[1].length}
+	if stats.Warmed[1] != wantHead {
+		t.Errorf("Warmed[1] = %+v, want %+v", stats.Warmed[1], wantHead)
+	}
+	wantTail := WarmedRange{Path: "/mnt/user/4K/a.mkv", Offset: cueStart, Length: size - cueStart}
+	if stats.Warmed[2] != wantTail {
+		t.Errorf("Warmed[2] = %+v, want %+v", stats.Warmed[2], wantTail)
 	}
 }
 

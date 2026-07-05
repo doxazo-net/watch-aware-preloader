@@ -141,7 +141,9 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 		}
 
 		if pl.front > 0 {
-			_ = p.cache.Warm(hostPath, 0, pl.front) // best-effort: front metadata (file open)
+			if err := p.cache.Warm(hostPath, 0, pl.front); err != nil {
+				p.log.Warn("front-metadata warm failed", "path", hostPath, "err", err)
+			}
 		}
 		if err := p.cache.Warm(hostPath, pl.offset, pl.head); err != nil {
 			stats.Missing++
@@ -149,14 +151,22 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 			continue
 		}
 		if pl.tail > 0 {
-			_ = p.cache.Warm(hostPath, pl.tailOffset, pl.tail) // best-effort: cue index / trailing metadata
+			if err := p.cache.Warm(hostPath, pl.tailOffset, pl.tail); err != nil {
+				p.log.Warn("tail warm failed", "path", hostPath, "err", err)
+			}
 		}
 		used += cost
 		stats.Preloaded++
 		stats.BytesWarmed += cost
 		stats.ByTier[t.Tier]++
 		stats.ByUser[t.Item.UserID]++
+		if pl.front > 0 {
+			stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: 0, Length: pl.front})
+		}
 		stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: pl.offset, Length: pl.head})
+		if pl.tail > 0 {
+			stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: pl.tailOffset, Length: pl.tail})
+		}
 		p.log.Info("preloaded", "name", t.Item.Name, "tier", t.Tier.String(),
 			"user", t.Item.UserID, "offset", pl.offset, "bytes", pl.head)
 	}
