@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/doxazo-net/watch-aware-preloader/internal/container"
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
 )
@@ -238,6 +239,60 @@ func TestRunWarmErrorNotCountedPreloaded(t *testing.T) {
 	stats := p.Run(context.Background(), targets, 1<<40)
 	if stats.Preloaded != 0 {
 		t.Errorf("Preloaded = %d, want 0 when Warm returns an error", stats.Preloaded)
+	}
+}
+
+func TestRunResumeWarmsFrontAndExactCueTail(t *testing.T) {
+	cache := &fakeCache{resident: -1} // always warm
+	const size = int64(20 << 30)
+	fs := fakeFS{"/mnt/user/4K/a.mkv": size}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// Inject a layout: front metadata ends at 200 KiB; cue index starts 8 MiB
+	// before EOF (a long-film cue index the flat 1 MiB tail would miss).
+	const frontEnd = int64(200 << 10)
+	cueStart := size - (8 << 20)
+	p.inspect = func(_ string, _ int64) (container.Layout, bool) {
+		return container.Layout{FrontEnd: frontEnd, CueStart: cueStart}, true
+	}
+	targets := []core.PreloadTarget{{
+		Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/4K/a.mkv", BitrateBps: 80_000_000, ResumeOffset: 30 * time.Minute},
+		Tier: core.TierResume,
+	}}
+	p.Run(context.Background(), targets, 1<<40)
+
+	// Expect three warm calls: front [0,200KiB), head at the resume offset, tail [cueStart,EOF).
+	if len(cache.warmed) != 3 {
+		t.Fatalf("want 3 warm calls (front+head+tail), got %d: %+v", len(cache.warmed), cache.warmed)
+	}
+	front := cache.warmed[0]
+	if front.offset != 0 || front.length != frontEnd {
+		t.Errorf("front warm = offset %d len %d, want offset 0 len %d", front.offset, front.length, frontEnd)
+	}
+	tail := cache.warmed[2]
+	if tail.offset != cueStart || tail.length != size-cueStart {
+		t.Errorf("cue tail = offset %d len %d, want offset %d len %d", tail.offset, tail.length, cueStart, size-cueStart)
+	}
+}
+
+func TestRunResumeFallsBackToFlatTailOnParseFailure(t *testing.T) {
+	cache := &fakeCache{resident: -1}
+	const size = int64(5 << 30)
+	fs := fakeFS{"/mnt/user/TV/a.mkv": size}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	p.inspect = func(_ string, _ int64) (container.Layout, bool) {
+		return container.Layout{}, false // parse failure -> flat tail, no front
+	}
+	targets := []core.PreloadTarget{{
+		Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 8_000_000, ResumeOffset: 10 * time.Minute},
+		Tier: core.TierResume,
+	}}
+	p.Run(context.Background(), targets, 1<<40)
+	// No front warm; head first, flat 1 MiB tail second.
+	if len(cache.warmed) != 2 {
+		t.Fatalf("want 2 warm calls (head+flat tail), got %d: %+v", len(cache.warmed), cache.warmed)
+	}
+	if cache.warmed[1].length != testCfg().TailBytes {
+		t.Errorf("fallback tail len = %d, want flat %d", cache.warmed[1].length, testCfg().TailBytes)
 	}
 }
 

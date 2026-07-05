@@ -7,9 +7,17 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/doxazo-net/watch-aware-preloader/internal/container"
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 	"github.com/doxazo-net/watch-aware-preloader/internal/pagecache"
 	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
+)
+
+// Safety caps for the parsed resume regions, so a bogus SeekHead pointer or
+// large front attachments can never warm an unbounded amount.
+const (
+	maxFrontBytes = 16 << 20 // cap the front-metadata window
+	maxTailBytes  = 64 << 20 // cap the cue tail window
 )
 
 // Config controls duration-based sizing and the tail read.
@@ -58,16 +66,17 @@ type RunStats struct {
 
 // Preloader executes preload passes.
 type Preloader struct {
-	cfg    Config
-	cache  pagecache.Cache
-	mapper *pathmap.Mapper
-	fs     FS
-	log    *slog.Logger
+	cfg     Config
+	cache   pagecache.Cache
+	mapper  *pathmap.Mapper
+	fs      FS
+	log     *slog.Logger
+	inspect func(path string, size int64) (container.Layout, bool)
 }
 
 // New builds a Preloader.
 func New(cfg Config, cache pagecache.Cache, mapper *pathmap.Mapper, fs FS, log *slog.Logger) *Preloader {
-	return &Preloader{cfg: cfg, cache: cache, mapper: mapper, fs: fs, log: log}
+	return &Preloader{cfg: cfg, cache: cache, mapper: mapper, fs: fs, log: log, inspect: container.Inspect}
 }
 
 // ToHost maps a server-reported path to its host path via the configured path
@@ -114,32 +123,33 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 			continue
 		}
 
-		pl := p.planWarm(t, size)
+		pl := p.planWarm(t, hostPath, size)
 
-		// Skip only when both the head window and the EOF tail are resident;
-		// a hot head with a cold tail must still warm the tail (container
-		// metadata at EOF can otherwise force disk I/O on open).
-		if p.resident(hostPath, pl.offset, pl.head) && p.resident(hostPath, pl.tailOffset, pl.tail) {
+		// Skip only when the front metadata, content window, and cue tail are
+		// all resident; any cold region can force a disk spin-up on open/seek.
+		if p.resident(hostPath, 0, pl.front) && p.resident(hostPath, pl.offset, pl.head) && p.resident(hostPath, pl.tailOffset, pl.tail) {
 			stats.Skipped++
 			stats.ByTier[t.Tier]++
 			stats.ByUser[t.Item.UserID]++
 			continue
 		}
 
-		// Charge only the unique bytes actually warmed (tail may be zero or
-		// clamped near EOF), so the budget and BytesWarmed stay accurate.
-		cost := pl.head + pl.tail
+		// Charge only the unique bytes actually warmed.
+		cost := pl.front + pl.head + pl.tail
 		if used+cost > budgetBytes {
 			break // budget exhausted; remaining lower-priority targets dropped
 		}
 
+		if pl.front > 0 {
+			_ = p.cache.Warm(hostPath, 0, pl.front) // best-effort: front metadata (file open)
+		}
 		if err := p.cache.Warm(hostPath, pl.offset, pl.head); err != nil {
 			stats.Missing++
 			p.log.Warn("warm failed", "path", hostPath, "err", err)
 			continue
 		}
 		if pl.tail > 0 {
-			_ = p.cache.Warm(hostPath, pl.tailOffset, pl.tail) // best-effort: tail (e.g. MP4 moov) warm failure is non-fatal
+			_ = p.cache.Warm(hostPath, pl.tailOffset, pl.tail) // best-effort: cue index / trailing metadata
 		}
 		used += cost
 		stats.Preloaded++
@@ -157,15 +167,21 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 // (sized by playback duration, at the resume offset for in-progress items) and
 // the EOF tail, clamped so the two never overlap.
 type warmRanges struct {
+	front            int64 // [0, front) front metadata; 0 = none
 	offset, head     int64
 	tailOffset, tail int64
 }
 
-// planWarm computes the head and tail ranges for an item against its file size.
-func (p *Preloader) planWarm(t core.PreloadTarget, size int64) warmRanges {
+// planWarm computes the front-metadata, content (head), and tail ranges for an
+// item against its file size. For a seeking (resume) target it warms the exact
+// cue index and front metadata when the container parser can locate them,
+// falling back to the flat TailBytes tail otherwise. hostPath is the mapped
+// on-host path used to inspect the container.
+func (p *Preloader) planWarm(t core.PreloadTarget, hostPath string, size int64) warmRanges {
 	head := HeadBytes(p.cfg, t.Item)
 	offset := int64(0)
-	if t.Tier == core.TierResume {
+	seeking := t.Tier == core.TierResume
+	if seeking {
 		offset = resumeOffsetBytes(t.Item)
 	}
 	if offset >= size {
@@ -175,25 +191,48 @@ func (p *Preloader) planWarm(t core.PreloadTarget, size int64) warmRanges {
 		head = size - offset
 	}
 
-	tailOffset, tail := int64(0), int64(0)
-	if p.cfg.TailBytes > 0 {
-		// Anchor the tail to EOF; for a file at or below TailBytes this starts at
-		// 0 so the whole suffix is covered (a small file whose head stops short
-		// of EOF would otherwise leave the end cold).
+	var front, tailOffset, tail int64
+	parsed := false
+	if seeking && p.inspect != nil {
+		if layout, ok := p.inspect(hostPath, size); ok {
+			parsed = true
+			if layout.FrontEnd > 0 {
+				front = layout.FrontEnd
+				if front > maxFrontBytes {
+					front = maxFrontBytes
+				}
+				if front > offset { // never overlap the content window
+					front = offset
+				}
+			}
+			// A trailing cue index needs its own tail warm; a front-placed cue
+			// index is already covered by the front-metadata window.
+			if layout.CueStart >= front && layout.CueStart < size {
+				tailOffset = layout.CueStart
+				if tailOffset < size-maxTailBytes {
+					tailOffset = size - maxTailBytes
+				}
+				tail = size - tailOffset
+			}
+		}
+	}
+	if !parsed && p.cfg.TailBytes > 0 {
+		// Flat fallback tail: non-seeking tiers, or a parse failure.
 		tailOffset = size - p.cfg.TailBytes
 		if tailOffset < 0 {
 			tailOffset = 0
 		}
 		tail = size - tailOffset
-		if tailOffset < offset+head { // tail would overlap the head window
-			tailOffset = offset + head
-			tail = size - tailOffset
-			if tail < 0 {
-				tail = 0
-			}
+	}
+	// The tail must not overlap the content window (keeps the budget accurate).
+	if tail > 0 && tailOffset < offset+head {
+		tailOffset = offset + head
+		tail = size - tailOffset
+		if tail < 0 {
+			tail = 0
 		}
 	}
-	return warmRanges{offset: offset, head: head, tailOffset: tailOffset, tail: tail}
+	return warmRanges{front: front, offset: offset, head: head, tailOffset: tailOffset, tail: tail}
 }
 
 // resident reports whether [offset, length) is already fully page-cache resident.
