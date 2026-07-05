@@ -49,6 +49,20 @@ func seekEntry(targetID uint32, pos uint64) []byte {
 	return elem(0x4DBB, body)                            // Seek
 }
 
+// seekEntryOversizedPosition builds a Seek entry whose SeekPosition value is
+// declared 9 bytes long -- one past EBML's 8-byte value cap. beUint would
+// otherwise shift past 64 bits and wrap; parseSeekHead must instead ignore
+// this entry entirely.
+func seekEntryOversizedPosition(targetID uint32, pos uint64) []byte {
+	body := elem(0x53AB, vintID(targetID)) // SeekID -> target element's ID bytes
+	payload := make([]byte, 9)             // 9-byte declared value size, > the 8-byte EBML cap
+	for i := 0; i < 8; i++ {
+		payload[8-i] = byte(pos >> (8 * i))
+	}
+	body = append(body, elem(0x53AC, payload)...) // SeekPosition (oversized)
+	return elem(0x4DBB, body)                     // Seek
+}
+
 // writeMKV builds a front-of-file MKV with a SeekHead pointing Cues at
 // cuesPos (relative to segment data start) and a Cluster right after the
 // SeekHead. It returns the path plus the expected FrontEnd and CueStart.
@@ -69,6 +83,38 @@ func writeMKV(t *testing.T, cuesPos uint64) (path string, wantFront, wantCue int
 		t.Fatal(err)
 	}
 	return p, firstCluster, segDataStart + int64(cuesPos)
+}
+
+// writeMKVWithSeekEntry is writeMKV generalized to accept the raw Seek entry
+// bytes, so a test can inject a malformed one (e.g. an oversized SeekPosition).
+func writeMKVWithSeekEntry(t *testing.T, seek []byte) (path string, wantFront int64) {
+	t.Helper()
+	ebml := elem(0x1A45DFA3, []byte{0x01}) // EBML header; body content irrelevant (skipped by size)
+	seekHead := elem(0x114D9B74, seek)
+	cluster := elem(0x1F43B675, []byte{0x00, 0x00}) // Cluster; body not parsed
+	segBody := append(append([]byte{}, seekHead...), cluster...)
+	segHeader := append(vintID(0x18538067), vintSize(len(segBody))...)
+	file := append(append([]byte{}, ebml...), segHeader...)
+	segDataStart := int64(len(file)) // first byte after the segment size
+	file = append(file, segBody...)
+	firstCluster := segDataStart + int64(len(seekHead))
+	dir := t.TempDir()
+	p := filepath.Join(dir, "sample.mkv")
+	if err := os.WriteFile(p, file, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p, firstCluster
+}
+
+func TestInspectIgnoresOversizedSeekPosition(t *testing.T) {
+	// Cues' SeekPosition is declared 9 bytes -- beyond EBML's 8-byte value cap.
+	// parseSeekHead must ignore the malformed entry rather than wrap it into a
+	// bogus offset, so Cues is never located and Inspect reports ok=false.
+	seek := seekEntryOversizedPosition(0x1C53BB6B, 19_000_000_000)
+	p, _ := writeMKVWithSeekEntry(t, seek)
+	if _, ok := Inspect(p, 20<<30); ok {
+		t.Error("Inspect ok=true with an oversized SeekPosition value, want false (Cues not located)")
+	}
 }
 
 func TestInspectLocatesCuesAndFront(t *testing.T) {

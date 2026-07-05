@@ -145,11 +145,20 @@ func parseSeekHead(buf []byte, start, end int, seek map[int64]int64) {
 			sp = body
 			continue
 		case idSeekID:
-			curID = beUint(buf, body, int(sz))
+			// EBML values are at most 8 bytes; a larger declared size is
+			// malformed and would wrap when shifted into an int64. Ignore it
+			// rather than let curID silently record a wrapped value.
+			if sz <= 8 {
+				curID = beUint(buf, body, int(sz))
+			} else {
+				curID = -1
+			}
 		case idSeekPosition:
 			if curID >= 0 {
-				if _, dup := seek[curID]; !dup {
-					seek[curID] = beUint(buf, body, int(sz))
+				if sz <= 8 {
+					if _, dup := seek[curID]; !dup {
+						seek[curID] = beUint(buf, body, int(sz))
+					}
 				}
 				curID = -1
 			}
