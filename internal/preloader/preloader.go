@@ -140,15 +140,19 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 			break // budget exhausted; remaining lower-priority targets dropped
 		}
 
-		if pl.front > 0 {
-			if err := p.cache.Warm(hostPath, 0, pl.front); err != nil {
-				p.log.Warn("front-metadata warm failed", "path", hostPath, "err", err)
-			}
-		}
+		// Warm the content window first: it is the fatal, budget-critical range.
+		// Only if it succeeds do we warm the best-effort front metadata and cue
+		// tail, so a head-warm failure never leaves front/tail bytes warmed but
+		// uncharged (budget under-accounting) or unrecorded (a blind -verify).
 		if err := p.cache.Warm(hostPath, pl.offset, pl.head); err != nil {
 			stats.Missing++
 			p.log.Warn("warm failed", "path", hostPath, "err", err)
 			continue
+		}
+		if pl.front > 0 {
+			if err := p.cache.Warm(hostPath, 0, pl.front); err != nil {
+				p.log.Warn("front-metadata warm failed", "path", hostPath, "err", err)
+			}
 		}
 		if pl.tail > 0 {
 			if err := p.cache.Warm(hostPath, pl.tailOffset, pl.tail); err != nil {
@@ -160,6 +164,8 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 		stats.BytesWarmed += cost
 		stats.ByTier[t.Tier]++
 		stats.ByUser[t.Item.UserID]++
+		// Record every warmed range in offset order so -verify can probe the
+		// front metadata and cue tail, not just the content window.
 		if pl.front > 0 {
 			stats.Warmed = append(stats.Warmed, WarmedRange{Path: hostPath, Offset: 0, Length: pl.front})
 		}
@@ -229,7 +235,12 @@ func (p *Preloader) inspectRanges(seeking bool, hostPath string, size, offset in
 		if front > maxFrontBytes {
 			front = maxFrontBytes
 		}
-		if front > offset { // never overlap the content window
+		// Never overlap the content window. When offset < FrontEnd (an early
+		// resume), truncating front to offset relies on the head window covering
+		// the rest of the metadata: it does because container.frontReadCap (the
+		// cap on FrontEnd) is <= the smallest head (MinHeadBytes floor), so
+		// offset+head >= head >= FrontEnd. Keep that invariant if either changes.
+		if front > offset {
 			front = offset
 		}
 	}
