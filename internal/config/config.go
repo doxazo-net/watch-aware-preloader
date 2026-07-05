@@ -120,7 +120,10 @@ func (c *Config) applyDefaults(tiersDefined bool) {
 		c.Preload.MaxHeadMB = 250
 	}
 	if c.Preload.TailMB == 0 {
-		c.Preload.TailMB = 1
+		// Flat fallback tail, used only when the container parser cannot locate
+		// the cue index (non-MKV or parse failure). MKV resume targets warm the
+		// exact cue region instead; see internal/container.
+		c.Preload.TailMB = 16
 	}
 	if c.Schedule.SweepSeconds == 0 {
 		c.Schedule.SweepSeconds = 60
