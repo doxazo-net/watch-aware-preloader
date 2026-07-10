@@ -76,9 +76,13 @@ php-test: ## Run plain-PHP unit tests (test/*_test.php) + the render contract te
 	bash test/rc_preloadd_render_test.sh
 	bash test/plg_render_test.sh
 
+.PHONY: smoke-test
+smoke-test: ## Smoke-test the install-by-URL cron-collation flow (#26)
+	bash scripts/smoke-install-by-url.sh
+
 .PHONY: shellcheck
-shellcheck: ## Lint shipped bash (rc.preloadd + test harnesses)
-	@files=$$(find src -type f -name 'rc.*'; find test -type f -name '*.sh' 2>/dev/null); \
+shellcheck: ## Lint shipped bash (rc.preloadd + test/ + scripts/ harnesses)
+	@files=$$(find src -type f -name 'rc.*'; find test -type f -name '*.sh' 2>/dev/null; find scripts -type f -name '*.sh' 2>/dev/null); \
 	if [ -n "$$files" ]; then \
 		shellcheck $$files ; \
 	else \
