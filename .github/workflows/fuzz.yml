@@ -1,8 +1,9 @@
 name: Fuzz
 
-# Weekly scheduled fuzzing plus on-demand runs. Native Go fuzz targets double as
-# seed-corpus regression tests under `go test` (that runs in ci.yml); this
-# workflow does the mutating exploration that is too slow for every push.
+# Weekly scheduled fuzzing plus on-demand runs. Each fuzz target's SEED CORPUS
+# runs as a regression test under plain `go test` (in ci.yml) with no mutation;
+# the `-fuzz` MUTATION run - generating new inputs, too slow for every push -
+# happens only in this workflow.
 #
 # Discovery is a static matrix: every target is listed explicitly so adding one
 # is an intentional, reviewable one-line change. The drift-check job fails if the
@@ -15,9 +16,6 @@ on:
     - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -27,6 +25,8 @@ jobs:
     name: Fuzz matrix drift check
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -40,7 +40,7 @@ jobs:
           # left unfuzzed.
           live=$(grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ \
             | sed -E 's/^func +//' | sort -u)
-          matrix=$(grep -oE 'fuzz:[[:space:]]*"?Fuzz[A-Za-z0-9_]+' .github/workflows/fuzz.yml \
+          matrix=$(grep -oE "fuzz:[[:space:]]*['\"]?Fuzz[A-Za-z0-9_]+" .github/workflows/fuzz.yml \
             | grep -oE 'Fuzz[A-Za-z0-9_]+' | sort -u)
           echo "live Fuzz functions:"; echo "$live"
           echo "matrix fuzz targets:"; echo "$matrix"
@@ -58,6 +58,8 @@ jobs:
     name: Fuzz ${{ matrix.fuzz }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -84,9 +86,9 @@ jobs:
           path: |
             ~/.cache/go-build
             ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fuzz }}
+          # No restore-keys: a go.sum change must genuinely start a fresh
+          # corpus, not rehydrate an older one via a prefix match.
           key: fuzz-corpus-${{ matrix.fuzz }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            fuzz-corpus-${{ matrix.fuzz }}-
       - name: Fuzz
         run: go test -run='^$' -fuzz='^${{ matrix.fuzz }}$' -fuzztime=10m ${{ matrix.pkg }}
       - name: Upload crash corpus

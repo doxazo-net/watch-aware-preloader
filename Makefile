@@ -60,7 +60,7 @@ FUZZ_TARGETS := \
 	./internal/mediaserver/emby:FuzzValidateBaseURL
 
 .PHONY: fuzz
-fuzz: ## Smoke-fuzz each target 20s (seed corpus already runs under `make test`)
+fuzz: ## Smoke-fuzz each target 20s with mutation; the seed corpus alone runs (no mutation) under `make test`
 	@for t in $(FUZZ_TARGETS); do \
 		pkg=$${t%%:*}; name=$${t##*:}; \
 		echo "== fuzz $$name ($$pkg) =="; \
