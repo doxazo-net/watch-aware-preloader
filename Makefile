@@ -51,6 +51,16 @@ fmt: ## Format Go code and tidy modules
 vet: ## Run go vet
 	go vet ./...
 
+.PHONY: fuzz
+fuzz: ## Smoke-fuzz each target 20s (seed corpus already runs under `make test`)
+	go test -run='^$$' -fuzz='.' -fuzztime=20s ./internal/pathmap
+	go test -run='^$$' -fuzz='.' -fuzztime=20s ./internal/config
+	go test -run='^$$' -fuzz='.' -fuzztime=20s ./internal/mediaserver/emby
+
+.PHONY: vulncheck
+vulncheck: ## Scan for known vulnerabilities (govulncheck, pinned)
+	go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
 ## ----- PHP (Phase 2 settings page) -----
 
 .PHONY: php-install
