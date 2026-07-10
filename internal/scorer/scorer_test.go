@@ -34,6 +34,19 @@ func TestRankDedupesKeepingHighestPriority(t *testing.T) {
 	if got[0].Tier != core.TierResume {
 		t.Fatalf("expected TierResume to win dedupe, got %v", got[0].Tier)
 	}
+
+	// KEEP-EXISTING branch: the higher-priority tier arrives FIRST, the lower
+	// second. The seen entry must be retained, not overwritten by the later one.
+	firstWins := Rank([]Candidate{
+		{Item: item("a", 0), Tier: core.TierResume},
+		{Item: item("a", 0), Tier: core.TierRecentlyAdded},
+	}, nil)
+	if len(firstWins) != 1 {
+		t.Fatalf("expected 1 deduped target, got %d", len(firstWins))
+	}
+	if firstWins[0].Tier != core.TierResume {
+		t.Fatalf("expected TierResume to survive when it arrives first, got %v", firstWins[0].Tier)
+	}
 }
 
 func TestRankOrdersByTierThenResumeOffset(t *testing.T) {

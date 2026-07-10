@@ -17,6 +17,19 @@ func TestToHostLongestPrefixWins(t *testing.T) {
 	}
 }
 
+func TestToHostExactMatch(t *testing.T) {
+	// The canonical == r.From branch: a serverPath equal to the rule prefix maps
+	// straight to the To root with no trailing remainder.
+	m := New([]Rule{{From: "/share", To: "/mnt/user"}})
+	got, ok := m.ToHost("/share")
+	if !ok {
+		t.Fatal("expected an exact-match hit")
+	}
+	if want := "/mnt/user"; got != want {
+		t.Errorf("ToHost = %q, want %q", got, want)
+	}
+}
+
 func TestToHostNoMatch(t *testing.T) {
 	m := New([]Rule{{From: "/share", To: "/mnt/user"}})
 	if _, ok := m.ToHost("/data/movie.mkv"); ok {

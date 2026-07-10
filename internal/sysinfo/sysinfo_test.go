@@ -1,6 +1,7 @@
 package sysinfo
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -35,5 +36,21 @@ func TestBudgetBytes(t *testing.T) {
 	}
 	if got := BudgetBytes(1000, -5); got != 0 {
 		t.Errorf("negative pct should clamp to 0, got %d", got)
+	}
+	if got := BudgetBytes(0, 50); got != 0 {
+		t.Errorf("zero available should clamp to 0, got %d", got)
+	}
+	if got := BudgetBytes(-1, 50); got != 0 {
+		t.Errorf("negative available should clamp to 0, got %d", got)
+	}
+	// Large-input case: a naive available*pct would overflow int64. Assert the
+	// EXACT divide-before-multiply result (positive, so the > 0 intent is kept),
+	// so a future precision regression is caught, not just a wrap-to-nonpositive.
+	// For available=MaxInt64 (9223372036854775807), pct=10:
+	//   (MaxInt64/100)*10 + (MaxInt64%100)*10/100
+	//   = 92233720368547758*10 + 7*10/100
+	//   = 922337203685477580 + 0 = 922337203685477580.
+	if got := BudgetBytes(math.MaxInt64, 10); got != 922337203685477580 {
+		t.Errorf("BudgetBytes(MaxInt64,10) = %d, want 922337203685477580", got)
 	}
 }
