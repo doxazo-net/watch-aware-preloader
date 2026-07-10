@@ -40,7 +40,11 @@ jobs:
           # left unfuzzed.
           live=$(grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ \
             | sed -E 's/^func +//' | sort -u)
-          matrix=$(grep -oE "fuzz:[[:space:]]*['\"]?Fuzz[A-Za-z0-9_]+" .github/workflows/fuzz.yml \
+          # Drop commented-out lines first, then anchor the `fuzz:` key to the
+          # line start, so a disabled `# - fuzz: FuzzFoo` entry is not counted
+          # as present (which would let a disabled target slip past this check).
+          matrix=$(grep -v '^[[:space:]]*#' .github/workflows/fuzz.yml \
+            | grep -oE "^[[:space:]]*fuzz:[[:space:]]*['\"]?Fuzz[A-Za-z0-9_]+" \
             | grep -oE 'Fuzz[A-Za-z0-9_]+' | sort -u)
           echo "live Fuzz functions:"; echo "$live"
           echo "matrix fuzz targets:"; echo "$matrix"
@@ -77,15 +81,22 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
+      - name: Restore Go build cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          # Shared across the matrix (keyed only on OS + go.sum) so the build
+          # cache is stored once, not duplicated per fuzz target.
+          path: ~/.cache/go-build
+          key: fuzz-build-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            fuzz-build-${{ runner.os }}-
       - name: Restore corpus cache
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           # Accumulated interesting inputs live in <pkg>/testdata/fuzz/<Fuzz>;
           # key on go.sum so a dependency bump starts a fresh corpus rather than
           # replaying inputs against changed code.
-          path: |
-            ~/.cache/go-build
-            ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fuzz }}
+          path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fuzz }}
           # No restore-keys: a go.sum change must genuinely start a fresh
           # corpus, not rehydrate an older one via a prefix match.
           key: fuzz-corpus-${{ matrix.fuzz }}-${{ hashFiles('go.sum') }}
