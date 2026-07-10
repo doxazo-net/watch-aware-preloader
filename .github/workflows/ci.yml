@@ -109,6 +109,17 @@ jobs:
       - name: .plg render CDATA safety test (#23)
         run: bash test/plg_render_test.sh
 
+  shell-smoke:
+    name: Install-by-URL Smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - run: make smoke-test
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
@@ -120,6 +131,6 @@ jobs:
           persist-credentials: false
       - name: Run shellcheck on shipped bash
         run: |
-          files=$(find src -type f -name 'rc.*' 2>/dev/null; find test -type f -name '*.sh' 2>/dev/null)
+          files=$(find src -type f -name 'rc.*' 2>/dev/null; find test -type f -name '*.sh' 2>/dev/null; find scripts -type f -name '*.sh' 2>/dev/null)
           # shellcheck disable=SC2086  # $files is a space-separated path list; word-splitting is intended.
           if [ -n "$files" ]; then shellcheck $files; else echo "no shell scripts"; fi

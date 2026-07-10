@@ -10,6 +10,7 @@
 #   5. go build       -- cross-compile linux/amd64 for the daemon
 #   6. PHP lint       -- phpstan + php-cs-fixer (only when .php/.page files exist
 #                        and vendor/bin/phpstan is present)
+#   7. smoke-install  -- install-by-URL cron-collation smoke test (#26)
 #
 # Exit 0 = all checks passed; non-zero = first failure.
 
@@ -24,7 +25,7 @@ echo "=== gofmt ==="
 UNFORMATTED=$(gofmt -l . 2>/dev/null || true)
 if [ -n "$UNFORMATTED" ]; then
     echo "FAIL: the following files need formatting:"
-    echo "$UNFORMATTED" | sed 's/^/  /'
+    while IFS= read -r f; do echo "  $f"; done <<< "$UNFORMATTED"
     echo ""
     echo "Run: gofmt -w ."
     exit 1
@@ -64,6 +65,11 @@ if find plugin/ src/ -type f \( -name '*.php' -o -name '*.page' \) 2>/dev/null |
 else
     echo "SKIP: no PHP files under plugin/ or src/, or vendor/bin/phpstan not present"
 fi
+
+echo ""
+echo "=== smoke-install ==="
+bash scripts/smoke-install-by-url.sh
+echo "OK"
 
 echo ""
 echo "All hard checks passed."
