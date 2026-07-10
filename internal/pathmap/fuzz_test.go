@@ -1,6 +1,9 @@
 package pathmap
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // FuzzToHost checks that ToHost never panics regardless of the server path it is
 // handed. ToHost mixes UNC canonicalization, longest-prefix matching, and a
@@ -36,12 +39,32 @@ func FuzzToHost(f *testing.F) {
 		WithUnraidUNCFallback(),
 	)
 
+	// A second, empty mapper (no rules, no UNC fallback) so the fuzzer also drives
+	// ToHost's pure pass-through branch (len(rules)==0 && !uncFallback), which the
+	// rules+fallback mapper above can never reach.
+	empty := New(nil)
+
 	f.Fuzz(func(t *testing.T, serverPath string) {
-		// Contract under test: no panic. The (host, ok) result is not asserted -
-		// any deterministic classification is valid.
+		// Config 1 - rules + UNC fallback. Contract: no panic, and any "ok"
+		// mapping must carry a non-empty host (an empty host with ok=true would
+		// mean we claimed a mapping to nowhere).
 		host, ok := m.ToHost(serverPath)
 		if ok && host == "" {
-			t.Fatalf("ToHost returned ok with an empty host for %q", serverPath)
+			t.Fatalf("rules+fallback ToHost returned ok with an empty host for %q", serverPath)
+		}
+
+		// Config 2 - empty mapper, the pass-through branch. Here a non-UNC path
+		// (no leading `\\`) maps to itself verbatim, so an empty input legitimately
+		// yields ("", true) - the ok+empty-host invariant above does NOT hold and
+		// must not be asserted. The invariants that DO hold: it never panics, a
+		// non-UNC path passes through unchanged, and a UNC path is left unmapped.
+		ehost, eok := empty.ToHost(serverPath)
+		if strings.HasPrefix(serverPath, `\\`) {
+			if eok {
+				t.Fatalf("empty mapper mapped UNC path %q -> (%q, true); want no mapping", serverPath, ehost)
+			}
+		} else if !eok || ehost != serverPath {
+			t.Fatalf("empty mapper failed to pass %q through unchanged: got (%q, %v)", serverPath, ehost, eok)
 		}
 	})
 }

@@ -6,8 +6,9 @@ name: Fuzz
 #
 # Discovery is a static matrix: every target is listed explicitly so adding one
 # is an intentional, reviewable one-line change. The drift-check job fails if the
-# number of `func Fuzz*` definitions under internal/ stops matching the matrix,
-# so a new target cannot be silently left unfuzzed.
+# SET of `func Fuzz*` identifiers under internal/ stops matching the SET of matrix
+# fuzz-target names, so a new, removed, or renamed target cannot be silently left
+# unfuzzed (a rename that preserves the count would slip past a count-only check).
 
 on:
   schedule:
@@ -30,18 +31,28 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Matrix entry count matches live Fuzz functions
+      - name: Matrix fuzz-target set matches live Fuzz functions
         run: |
-          live=$(grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ | sort -u | wc -l | tr -d ' ')
-          entries=$(grep -cE '^[[:space:]]*fuzz:[[:space:]]*"?Fuzz' .github/workflows/fuzz.yml | tr -d ' ')
-          echo "live Fuzz functions: $live"
-          echo "matrix entries:      $entries"
-          if [ "$live" != "$entries" ]; then
-            echo "FAIL: fuzz matrix ($entries) is out of sync with internal/ Fuzz* functions ($live)."
-            echo "Update the matrix in .github/workflows/fuzz.yml to match."
+          # Compare the SORTED SET of live `func Fuzz<Name>` identifiers under
+          # internal/ against the SORTED SET of fuzz-target names in this
+          # workflow's matrix. Any add, removal, or rename (even one that keeps
+          # the count unchanged) fails the job, so a target cannot be silently
+          # left unfuzzed.
+          live=$(grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ \
+            | sed -E 's/^func +//' | sort -u)
+          matrix=$(grep -oE 'fuzz:[[:space:]]*"?Fuzz[A-Za-z0-9_]+' .github/workflows/fuzz.yml \
+            | grep -oE 'Fuzz[A-Za-z0-9_]+' | sort -u)
+          echo "live Fuzz functions:"; echo "$live"
+          echo "matrix fuzz targets:"; echo "$matrix"
+          if [ "$live" != "$matrix" ]; then
+            echo "FAIL: fuzz matrix is out of sync with internal/ Fuzz* functions."
+            echo "Only in code (add to the matrix):"
+            comm -23 <(printf '%s\n' "$live") <(printf '%s\n' "$matrix")
+            echo "Only in matrix (stale or renamed):"
+            comm -13 <(printf '%s\n' "$live") <(printf '%s\n' "$matrix")
             exit 1
           fi
-          echo "OK: matrix is current."
+          echo "OK: matrix set matches live Fuzz functions."
 
   fuzz:
     name: Fuzz ${{ matrix.fuzz }}

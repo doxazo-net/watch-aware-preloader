@@ -51,11 +51,21 @@ fmt: ## Format Go code and tidy modules
 vet: ## Run go vet
 	go vet ./...
 
+# Fuzz each target by explicit <pkg>:<FuzzName> so this stays correct if a
+# package ever gains a second Fuzz func (go test -fuzz='.' errors on >1 target
+# per package). Keep in sync with the matrix in .github/workflows/fuzz.yml.
+FUZZ_TARGETS := \
+	./internal/pathmap:FuzzToHost \
+	./internal/config:FuzzConfigLoad \
+	./internal/mediaserver/emby:FuzzValidateBaseURL
+
 .PHONY: fuzz
 fuzz: ## Smoke-fuzz each target 20s (seed corpus already runs under `make test`)
-	go test -run='^$$' -fuzz='.' -fuzztime=20s ./internal/pathmap
-	go test -run='^$$' -fuzz='.' -fuzztime=20s ./internal/config
-	go test -run='^$$' -fuzz='.' -fuzztime=20s ./internal/mediaserver/emby
+	@for t in $(FUZZ_TARGETS); do \
+		pkg=$${t%%:*}; name=$${t##*:}; \
+		echo "== fuzz $$name ($$pkg) =="; \
+		go test -run='^$$' -fuzz="^$$name$$" -fuzztime=20s $$pkg || exit 1; \
+	done
 
 .PHONY: vulncheck
 vulncheck: ## Scan for known vulnerabilities (govulncheck, pinned)
