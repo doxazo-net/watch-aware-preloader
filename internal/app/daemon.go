@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"log/slog"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/doxazo-net/watch-aware-preloader/internal/config"
@@ -100,14 +102,6 @@ func playingSignature(ids map[string]bool) string {
 		keys = append(keys, k)
 	}
 	// Deterministic signature independent of map order.
-	for i := 1; i < len(keys); i++ {
-		for j := i; j > 0 && keys[j] < keys[j-1]; j-- {
-			keys[j], keys[j-1] = keys[j-1], keys[j]
-		}
-	}
-	out := ""
-	for _, k := range keys {
-		out += k + ","
-	}
-	return out
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
 }

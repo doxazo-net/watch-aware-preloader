@@ -49,3 +49,22 @@ func (m stubFS) Stat(path string) (int64, error) {
 	}
 	return 0, io.EOF
 }
+
+func TestPlayingSignature(t *testing.T) {
+	// Same id set in different insertion orders must yield the same signature,
+	// and distinct sets must differ.
+	a := playingSignature(map[string]bool{"c": true, "a": true, "b": true})
+	b := playingSignature(map[string]bool{"a": true, "b": true, "c": true})
+	if a != b {
+		t.Errorf("signature not order-independent: %q vs %q", a, b)
+	}
+	if want := "a,b,c"; a != want {
+		t.Errorf("signature = %q, want %q", a, want)
+	}
+	if empty := playingSignature(map[string]bool{}); empty != "" {
+		t.Errorf("empty signature = %q, want \"\"", empty)
+	}
+	if playingSignature(map[string]bool{"a": true}) == playingSignature(map[string]bool{"a": true, "b": true}) {
+		t.Error("distinct id sets produced identical signatures")
+	}
+}
