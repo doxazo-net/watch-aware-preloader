@@ -15,6 +15,7 @@ const (
 	TierBestEffort                // filesystem-recency fill
 )
 
+// String returns the lowercase tier label used in structured logs.
 func (t Tier) String() string {
 	switch t {
 	case TierResume:

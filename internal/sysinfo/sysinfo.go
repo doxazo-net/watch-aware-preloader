@@ -49,5 +49,7 @@ func BudgetBytes(available int64, pct int) int64 {
 	if pct <= 0 || available <= 0 {
 		return 0
 	}
-	return available * int64(pct) / 100
+	// Divide-before-multiply to avoid overflowing int64 on large available values;
+	// the second term recovers the remainder so there is no precision loss.
+	return (available/100)*int64(pct) + (available%100)*int64(pct)/100
 }
