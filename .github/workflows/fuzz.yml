@@ -1,0 +1,113 @@
+name: Fuzz
+
+# Weekly scheduled fuzzing plus on-demand runs. Each fuzz target's SEED CORPUS
+# runs as a regression test under plain `go test` (in ci.yml) with no mutation;
+# the `-fuzz` MUTATION run - generating new inputs, too slow for every push -
+# happens only in this workflow.
+#
+# Discovery is a static matrix: every target is listed explicitly so adding one
+# is an intentional, reviewable one-line change. The drift-check job fails if the
+# SET of `func Fuzz*` identifiers under internal/ stops matching the SET of matrix
+# fuzz-target names, so a new, removed, or renamed target cannot be silently left
+# unfuzzed (a rename that preserves the count would slip past a count-only check).
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-check:
+    name: Fuzz matrix drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Matrix fuzz-target set matches live Fuzz functions
+        run: |
+          # Compare the SORTED SET of live `func Fuzz<Name>` identifiers under
+          # internal/ against the SORTED SET of fuzz-target names in this
+          # workflow's matrix. Any add, removal, or rename (even one that keeps
+          # the count unchanged) fails the job, so a target cannot be silently
+          # left unfuzzed.
+          live=$(grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ \
+            | sed -E 's/^func +//' | sort -u)
+          # Drop commented-out lines first, then anchor the `fuzz:` key to the
+          # line start (allowing an optional `- ` list marker), so a disabled
+          # `# - fuzz: FuzzFoo` entry is not counted as present while both the
+          # own-line (`fuzz: FuzzX`) and inline (`- fuzz: FuzzX`) YAML forms
+          # are still matched.
+          matrix=$(grep -v '^[[:space:]]*#' .github/workflows/fuzz.yml \
+            | grep -oE "^[[:space:]]*(-[[:space:]]*)?fuzz:[[:space:]]*['\"]?Fuzz[A-Za-z0-9_]+" \
+            | grep -oE 'Fuzz[A-Za-z0-9_]+' | sort -u)
+          echo "live Fuzz functions:"; echo "$live"
+          echo "matrix fuzz targets:"; echo "$matrix"
+          if [ "$live" != "$matrix" ]; then
+            echo "FAIL: fuzz matrix is out of sync with internal/ Fuzz* functions."
+            echo "Only in code (add to the matrix):"
+            comm -23 <(printf '%s\n' "$live") <(printf '%s\n' "$matrix")
+            echo "Only in matrix (stale or renamed):"
+            comm -13 <(printf '%s\n' "$live") <(printf '%s\n' "$matrix")
+            exit 1
+          fi
+          echo "OK: matrix set matches live Fuzz functions."
+
+  fuzz:
+    name: Fuzz ${{ matrix.fuzz }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: ./internal/pathmap
+            fuzz: FuzzToHost
+          - pkg: ./internal/config
+            fuzz: FuzzConfigLoad
+          - pkg: ./internal/mediaserver/emby
+            fuzz: FuzzValidateBaseURL
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Restore Go build cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          # Shared across the matrix (keyed only on OS + go.sum) so the build
+          # cache is stored once, not duplicated per fuzz target.
+          path: ~/.cache/go-build
+          key: fuzz-build-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            fuzz-build-${{ runner.os }}-
+      - name: Restore corpus cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          # Accumulated interesting inputs live in <pkg>/testdata/fuzz/<Fuzz>;
+          # key on go.sum so a dependency bump starts a fresh corpus rather than
+          # replaying inputs against changed code.
+          path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fuzz }}
+          # No restore-keys: a go.sum change must genuinely start a fresh
+          # corpus, not rehydrate an older one via a prefix match.
+          key: fuzz-corpus-${{ matrix.fuzz }}-${{ hashFiles('go.sum') }}
+      - name: Fuzz
+        run: go test -run='^$' -fuzz='^${{ matrix.fuzz }}$' -fuzztime=10m ${{ matrix.pkg }}
+      - name: Upload crash corpus
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-crash-${{ matrix.fuzz }}
+          path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fuzz }}
+          if-no-files-found: ignore

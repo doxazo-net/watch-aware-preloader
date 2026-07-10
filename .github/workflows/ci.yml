@@ -46,6 +46,21 @@ jobs:
         with:
           version: latest
 
+  govulncheck:
+    name: Go Vulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      # Version kept in lockstep with the Makefile `vulncheck` target.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
   go-build:
     name: Go Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
