@@ -25,6 +25,7 @@ Automation is OPT-IN: leave this commented to keep the issue out of automated di
 To enable, uncomment the line below and set the values.
 Format: [mode:acceptEdits][model:opus|sonnet|haiku][effort:low|medium|high]
 Sizing: trivial/mechanical -> sonnet/low; typical -> opus/medium; deep/architectural -> opus/high.
+WARNING: never include credentials, API keys, passwords, or PII anywhere in an issue.
 
 [mode:acceptEdits][model:opus][effort:medium]
 -->
