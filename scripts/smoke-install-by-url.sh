@@ -21,7 +21,7 @@ RC="${REPO_ROOT}/src/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.p
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
-[ -x "$RC" ] || [ -f "$RC" ] || fail "rc.preloadd not found at $RC"
+[ -r "$RC" ] || fail "rc.preloadd not found or not readable at $RC"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -80,12 +80,20 @@ echo "OK"
 
 echo "=== case B: normal install, .plg present ==="
 touch "$WAP_PLG_FILE"
+# Independence from case A: wipe the plugin-log dir so the marker case A created
+# is gone. This forces case B to prove rc.preloadd's ensure_marker RE-creates the
+# marker on the normal (.plg present) path, rather than passing on a leftover
+# symlink that merely stopped dangling once PLG_FILE exists.
+rm -f "$WAP_PLUGIN_LOG_DIR"/*.plg
 : > "$WAP_TEST_CRONTAB"
 bash "$RC" install
 [ -L "$marker" ] || fail "cron marker symlink missing when PLG_FILE present"
 [ -e "$marker" ] || fail "marker should resolve when PLG_FILE present"
 grep -qF -- '-once -config' "$WAP_TEST_CRONTAB" \
     || fail "stub update_cron did not collate the cron fragment when PLG_FILE present"
+# Exactly one collated line -- a duplicate/multiple-collation regression must fail.
+[ "$(grep -cF -- '-once -config' "$WAP_TEST_CRONTAB")" -eq 1 ] \
+    || fail "expected exactly one collated cron line when PLG_FILE present"
 echo "OK"
 
 echo "PASS: install-by-URL cron collation"
