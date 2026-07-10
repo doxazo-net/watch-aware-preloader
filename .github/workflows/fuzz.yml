@@ -41,10 +41,12 @@ jobs:
           live=$(grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ \
             | sed -E 's/^func +//' | sort -u)
           # Drop commented-out lines first, then anchor the `fuzz:` key to the
-          # line start, so a disabled `# - fuzz: FuzzFoo` entry is not counted
-          # as present (which would let a disabled target slip past this check).
+          # line start (allowing an optional `- ` list marker), so a disabled
+          # `# - fuzz: FuzzFoo` entry is not counted as present while both the
+          # own-line (`fuzz: FuzzX`) and inline (`- fuzz: FuzzX`) YAML forms
+          # are still matched.
           matrix=$(grep -v '^[[:space:]]*#' .github/workflows/fuzz.yml \
-            | grep -oE "^[[:space:]]*fuzz:[[:space:]]*['\"]?Fuzz[A-Za-z0-9_]+" \
+            | grep -oE "^[[:space:]]*(-[[:space:]]*)?fuzz:[[:space:]]*['\"]?Fuzz[A-Za-z0-9_]+" \
             | grep -oE 'Fuzz[A-Za-z0-9_]+' | sort -u)
           echo "live Fuzz functions:"; echo "$live"
           echo "matrix fuzz targets:"; echo "$matrix"
