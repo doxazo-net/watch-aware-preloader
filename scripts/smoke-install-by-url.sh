@@ -84,7 +84,7 @@ touch "$WAP_PLG_FILE"
 # is gone. This forces case B to prove rc.preloadd's ensure_marker RE-creates the
 # marker on the normal (.plg present) path, rather than passing on a leftover
 # symlink that merely stopped dangling once PLG_FILE exists.
-rm -f "$WAP_PLUGIN_LOG_DIR"/*.plg
+rm -f -- "${WAP_PLUGIN_LOG_DIR:?WAP_PLUGIN_LOG_DIR must be set}"/*.plg
 : > "$WAP_TEST_CRONTAB"
 bash "$RC" install
 [ -L "$marker" ] || fail "cron marker symlink missing when PLG_FILE present"
