@@ -20,9 +20,11 @@ labels: bug
 ## Agent hints
 
 <!--
-Dispatch hints for automated implementation (the orchestrate lead reads this line).
+Optional dispatch hints, read by the orchestrator to auto-dispatch an implementer.
+Automation is OPT-IN: leave this commented to keep the issue out of automated dispatch.
+To enable, uncomment the line below and set the values.
 Format: [mode:acceptEdits][model:opus|sonnet|haiku][effort:low|medium|high]
-Pick model/effort by task size: trivial/mechanical -> sonnet/low; typical feature -> opus/medium; deep/architectural -> opus/high.
-Delete this whole section for an issue you do NOT want auto-dispatched.
--->
+Sizing: trivial/mechanical -> sonnet/low; typical -> opus/medium; deep/architectural -> opus/high.
+
 [mode:acceptEdits][model:opus][effort:medium]
+-->
