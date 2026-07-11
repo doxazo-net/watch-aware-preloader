@@ -92,17 +92,28 @@ func ProjectWarmSet(ctx context.Context, p Provider, cfg preloader.Config, budge
 	attribute := newLibraryAttributor(libs, toHost)
 
 	rows := make([]estimate.Row, 0, len(targets))
-	bucket := map[[2]string]int{} // (user,tier) -> count, for the truncation flag
 	for r, t := range targets {
-		tier := t.Tier.String()
 		rows = append(rows, estimate.Row{
 			U: t.Item.UserID,
-			T: tier,
+			T: t.Tier.String(),
 			L: attribute(t.Item.ServerPath),
 			B: projectBytes(cfg, t.Item, t.Tier),
 			R: r,
 		})
-		bucket[[2]string{t.Item.UserID, tier}]++
+	}
+
+	// CeilingTruncated is computed from the pre-Rank candidates (cands), not from
+	// targets. CollectCandidates caps each (user,tier) raw fetch to
+	// estimateCeilingPerUserTier via capItems, so a bucket that hit the cap has
+	// exactly the ceiling count in cands - but scorer.Rank then dedupes across
+	// tiers and drops now-playing items, which can shrink a capped bucket below
+	// the ceiling in targets and mask the truncation. Counting cands instead
+	// means, at worst, an exact-count-200 bucket that wasn't actually truncated
+	// upstream gets flagged anyway; that's the safe direction for an advisory
+	// flag (over-report, never under-report).
+	bucket := map[[2]string]int{} // (user,tier) -> count, for the truncation flag
+	for _, c := range cands {
+		bucket[[2]string{c.Item.UserID, c.Tier.String()}]++
 	}
 	truncated := false
 	for _, n := range bucket {

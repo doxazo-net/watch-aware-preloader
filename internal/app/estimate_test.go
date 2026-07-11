@@ -105,3 +105,26 @@ func TestProjectWarmSetUnattributableLibraryIsBlank(t *testing.T) {
 		t.Errorf("expected 1 row with blank library, got %+v", est.Rows)
 	}
 }
+
+func TestNewLibraryAttributorSkipsUnmappableLibrary(t *testing.T) {
+	// L1's location does not map (toHost returns ok=false), so libscope falls
+	// back to allow-all for it; the attributor must SKIP it rather than let its
+	// allow-all scope swallow every item. L2 maps normally.
+	toHost := func(p string) (string, bool) {
+		if p == "/nomap" {
+			return "", false
+		}
+		return p, true
+	}
+	libs := []emby.Library{
+		{ID: "L1", Locations: []string{"/nomap"}},
+		{ID: "L2", Locations: []string{"/mnt/user/TV"}},
+	}
+	attr := newLibraryAttributor(libs, toHost)
+	if got := attr("/mnt/user/TV/x.mkv"); got != "L2" {
+		t.Errorf("attr(TV item) = %q, want L2 (L1 unmappable must be skipped, not swallow it)", got)
+	}
+	if got := attr("/other/y.mkv"); got != "" {
+		t.Errorf("attr(unknown path) = %q, want empty", got)
+	}
+}
