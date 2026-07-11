@@ -35,14 +35,15 @@ var version = "dev"
 // The DEFAULT (no flags) is "once" so that a bare `preloadd` invocation is safe to
 // run under cron - it fetches fresh library state, preloads, and exits. The daemon
 // loop is strictly opt-in via -daemon.
-func selectMode(once, daemon, verify, estimate bool) (string, error) {
+func selectMode(once, daemon, verify, estimateMode bool) (string, error) {
 	// -verify is priority 1, then -estimate; both win even when -once and
 	// -daemon are both set. The mutual-exclusion check only applies to the
-	// once/daemon lifecycle.
+	// once/daemon lifecycle. The param is estimateMode (not estimate) so it does
+	// not shadow the imported estimate package.
 	if verify {
 		return "verify", nil
 	}
-	if estimate {
+	if estimateMode {
 		return "estimate", nil
 	}
 	if once && daemon {
