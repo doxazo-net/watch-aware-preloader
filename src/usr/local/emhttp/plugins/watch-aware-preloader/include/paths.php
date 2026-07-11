@@ -30,3 +30,9 @@ function wap_default_last_test_path(): string
 {
     return '/var/local/preloadd/last-test.json';
 }
+
+/** Default path the engine writes the warm-set projection (estimate.json) to. */
+function wap_default_estimate_path(): string
+{
+    return '/var/local/preloadd/estimate.json';
+}
