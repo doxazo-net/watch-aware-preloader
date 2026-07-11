@@ -451,17 +451,32 @@ func TestRunByTierCountsPreloadedOnly(t *testing.T) {
 	if stats.Preloaded != 2 || stats.Skipped != 1 {
 		t.Fatalf("Preloaded=%d Skipped=%d, want 2/1", stats.Preloaded, stats.Skipped)
 	}
-	sum := 0
+	sumTier := 0
 	for _, n := range stats.ByTier {
-		sum += n
+		sumTier += n
 	}
-	if sum != stats.Preloaded {
-		t.Errorf("sum(ByTier)=%d, want Preloaded=%d", sum, stats.Preloaded)
+	if sumTier != stats.Preloaded {
+		t.Errorf("sum(ByTier)=%d, want Preloaded=%d", sumTier, stats.Preloaded)
 	}
 	if stats.ByTier[core.TierResume] != 0 {
 		t.Errorf("ByTier[resume]=%d, want 0 (the resume item was skipped)", stats.ByTier[core.TierResume])
 	}
 	if stats.ByTier[core.TierNextUp] != 2 {
 		t.Errorf("ByTier[next_up]=%d, want 2", stats.ByTier[core.TierNextUp])
+	}
+	// ByUser mirrors the same invariant: it sums to Preloaded and the skipped
+	// user (user 3's resume item) is not double-counted.
+	sumUser := 0
+	for _, n := range stats.ByUser {
+		sumUser += n
+	}
+	if sumUser != stats.Preloaded {
+		t.Errorf("sum(ByUser)=%d, want Preloaded=%d", sumUser, stats.Preloaded)
+	}
+	if stats.ByUser["3"] != 1 { // only user 3's next_up "b" preloaded; the resume "a" was skipped
+		t.Errorf("ByUser[3]=%d, want 1 (resume item skipped, next_up preloaded)", stats.ByUser["3"])
+	}
+	if stats.ByUser["7"] != 1 {
+		t.Errorf("ByUser[7]=%d, want 1", stats.ByUser["7"])
 	}
 }
