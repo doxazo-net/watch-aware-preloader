@@ -1,8 +1,16 @@
 package app
 
 import (
+	"context"
+	"log/slog"
+
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/estimate"
+	"github.com/doxazo-net/watch-aware-preloader/internal/libscope"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
 	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
+	"github.com/doxazo-net/watch-aware-preloader/internal/scorer"
 )
 
 // estimateResumeFrontBytes is a fixed, deliberately-high allowance for the
@@ -23,4 +31,97 @@ func projectBytes(cfg preloader.Config, it core.MediaItem, tier core.Tier) int64
 		b += estimateResumeFrontBytes
 	}
 	return b
+}
+
+// estimateCeilingPerUserTier bounds how many items each (user, tier) contributes
+// to the projection, so the estimate.json payload and any client-side max-items
+// slider both stay bounded. Meta.CeilingTruncated flags when it bit.
+const estimateCeilingPerUserTier = 200
+
+// newLibraryAttributor returns a function mapping an item's server path to the ID
+// of the first library it falls under, or "" if none. It reuses libscope per
+// library so attribution matches the same host-path prefix logic library scoping
+// uses. A library whose Locations do not map (libscope falls back to allow-all)
+// is skipped for attribution rather than swallowing every item.
+func newLibraryAttributor(libs []emby.Library, toHost libscope.ToHost) func(serverPath string) string {
+	type libScope struct {
+		id    string
+		scope *libscope.Scope
+	}
+	scopes := make([]libScope, 0, len(libs))
+	for _, l := range libs {
+		s, fellBack := libscope.New([]libscope.Library{{ID: l.ID, Locations: l.Locations}}, []string{l.ID}, toHost)
+		if fellBack {
+			continue // unmappable library cannot attribute; leave its items blank
+		}
+		scopes = append(scopes, libScope{id: l.ID, scope: s})
+	}
+	return func(serverPath string) string {
+		for _, ls := range scopes {
+			if ls.scope.Allowed(serverPath) {
+				return ls.id
+			}
+		}
+		return ""
+	}
+}
+
+// ProjectWarmSet computes a side-effect-free warm-set projection over the FULL
+// candidate universe (all users, all libraries, all three tiers, capped to
+// estimateCeilingPerUserTier per user/tier), so the settings page can filter it
+// down client-side. It does read-only server queries only - no disk/page-cache
+// I/O - and returns anonymized rows in global rank order. generatedAt is an
+// RFC3339 UTC timestamp supplied by the caller (kept out of here so the function
+// is deterministic and testable).
+func ProjectWarmSet(ctx context.Context, p Provider, cfg preloader.Config, budgetBytes int64, ramPercent int, generatedAt string, toHost libscope.ToHost, log *slog.Logger) (estimate.Estimate, error) {
+	full := config.TiersConfig{
+		Resume:        config.TierDial{Enabled: true, MaxItems: estimateCeilingPerUserTier},
+		NextUp:        config.TierDial{Enabled: true, MaxItems: estimateCeilingPerUserTier},
+		RecentlyAdded: config.TierDial{Enabled: true, MaxItems: estimateCeilingPerUserTier},
+	}
+	cands, playing, err := CollectCandidates(ctx, p, nil, nil, full, toHost, log)
+	if err != nil {
+		return estimate.Estimate{}, err
+	}
+	targets := scorer.Rank(cands, playing)
+
+	libs, err := p.Libraries(ctx)
+	if err != nil {
+		return estimate.Estimate{}, err
+	}
+	attribute := newLibraryAttributor(libs, toHost)
+
+	rows := make([]estimate.Row, 0, len(targets))
+	bucket := map[[2]string]int{} // (user,tier) -> count, for the truncation flag
+	for r, t := range targets {
+		tier := t.Tier.String()
+		rows = append(rows, estimate.Row{
+			U: t.Item.UserID,
+			T: tier,
+			L: attribute(t.Item.ServerPath),
+			B: projectBytes(cfg, t.Item, t.Tier),
+			R: r,
+		})
+		bucket[[2]string{t.Item.UserID, tier}]++
+	}
+	truncated := false
+	for _, n := range bucket {
+		if n >= estimateCeilingPerUserTier {
+			truncated = true
+			break
+		}
+	}
+	return estimate.Estimate{
+		SchemaVersion:      estimate.SchemaVersion,
+		GeneratedAt:        generatedAt,
+		BudgetBytes:        budgetBytes,
+		CeilingPerUserTier: estimateCeilingPerUserTier,
+		Rows:               rows,
+		Meta: estimate.Meta{
+			TargetSeconds:    cfg.TargetSeconds,
+			RAMPercent:       ramPercent,
+			ItemCount:        len(rows),
+			CeilingTruncated: truncated,
+		},
+	}, nil
 }
