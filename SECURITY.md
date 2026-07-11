@@ -28,15 +28,15 @@ will be addressed as quickly as practical.
 
 ## Automated security scanning
 
-The project runs several automated scans in CI (all pinned to commit SHAs with
-least-privilege permissions):
+The project runs several automated scans in CI (the workflows use SHA-pinned
+GitHub Actions and least-privilege permissions):
 
 | Tool | Scope | Where |
 | ---- | ----- | ----- |
 | **CodeQL** | Static analysis (SAST): dataflow/taint on Go | `.github/workflows/codeql.yml` (PR, push to main, weekly) |
 | **govulncheck** | Known vulnerabilities in Go dependencies and reachable stdlib | `make vulncheck` + the `Go Vulncheck` CI job |
 | **Native fuzzing** | Adversarial-input properties at trust boundaries (path map, config load, base-URL validation) | `.github/workflows/fuzz.yml` (weekly + on demand) |
-| **dependency-review** | Blocks PRs that introduce vulnerable or disallowed-license dependencies | `.github/workflows/dependency-review.yml` |
+| **dependency-review** | Blocks PRs that introduce dependencies with high/critical severity advisories | `.github/workflows/dependency-review.yml` |
 | **OpenSSF Scorecard** | Supply-chain / repository security posture | `.github/workflows/scorecard.yml` |
 | **Dependabot** | Dependency update PRs | `.github/dependabot.yml` |
 
