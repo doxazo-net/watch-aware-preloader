@@ -32,17 +32,18 @@ var version = "dev"
 // run under cron - it fetches fresh library state, preloads, and exits. The daemon
 // loop is strictly opt-in via -daemon.
 func selectMode(once, daemon, verify bool) (string, error) {
+	// -verify is priority 1, so it wins even when -once and -daemon are both
+	// set; the mutual-exclusion check only applies to the once/daemon lifecycle.
+	if verify {
+		return "verify", nil
+	}
 	if once && daemon {
 		return "", errors.New("-once and -daemon are mutually exclusive")
 	}
-	switch {
-	case verify:
-		return "verify", nil
-	case daemon:
+	if daemon {
 		return "daemon", nil
-	default: // covers both explicit -once and the bare invocation
-		return "once", nil
 	}
+	return "once", nil // covers both explicit -once and the bare invocation
 }
 
 func main() {

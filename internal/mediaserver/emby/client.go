@@ -14,9 +14,9 @@ import (
 
 // Client talks to a single Emby server with an API key.
 type Client struct {
-	base   *url.URL
-	apiKey string
-	http   *http.Client
+	base       *url.URL
+	apiKey     string
+	httpClient *http.Client
 }
 
 // validateBaseURL enforces the media-server trust boundary. The configured base
@@ -75,9 +75,9 @@ func New(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
 		return http.ErrUseLastResponse
 	}
 	return &Client{
-		base:   base,
-		apiKey: apiKey,
-		http:   &hc,
+		base:       base,
+		apiKey:     apiKey,
+		httpClient: &hc,
 	}, nil
 }
 
@@ -95,7 +95,7 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

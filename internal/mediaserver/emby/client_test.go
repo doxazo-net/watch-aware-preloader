@@ -92,6 +92,44 @@ func TestGetSendsTokenAndDecodes(t *testing.T) {
 	}
 }
 
+func TestGetErrorsOnNon200(t *testing.T) {
+	// A non-200 status must surface as an error and never attempt to decode the
+	// body into out.
+	for _, code := range []int{http.StatusNotFound, http.StatusInternalServerError, http.StatusUnauthorized} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(code)
+		}))
+		c, err := New(srv.URL, "secret", srv.Client())
+		if err != nil {
+			srv.Close()
+			t.Fatal(err)
+		}
+		var out struct{ Value int }
+		if err := c.get(context.Background(), "/x", nil, &out); err == nil {
+			t.Errorf("status %d: expected error, got nil", code)
+		}
+		srv.Close()
+	}
+}
+
+func TestGetNilOutSkipsDecode(t *testing.T) {
+	// A 200 with out == nil is a fire-and-forget request: it must succeed
+	// without touching the (here non-JSON) body.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, "secret", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.get(context.Background(), "/x", nil, nil); err != nil {
+		t.Errorf("nil out should skip decode and succeed, got %v", err)
+	}
+}
+
 func TestGetDoesNotFollowRedirect(t *testing.T) {
 	// X-Emby-Token would be re-sent on a cross-host redirect; the client must
 	// refuse to follow, so the redirect target never sees the API key.

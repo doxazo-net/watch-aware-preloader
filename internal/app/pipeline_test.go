@@ -53,8 +53,8 @@ func (s *stubProvider) NowPlayingIDs(context.Context) (map[string]bool, error) {
 func TestResolveUserIDsAllWhenEmpty(t *testing.T) {
 	users := []emby.User{{ID: "1", Name: "jesse"}, {ID: "2", Name: "rachel"}}
 	got := ResolveUserIDs(users, nil)
-	if len(got) != 2 {
-		t.Fatalf("expected all users, got %v", got)
+	if len(got) != 2 || got[0] != "1" || got[1] != "2" {
+		t.Fatalf("expected [1 2] in order, got %v", got)
 	}
 }
 
