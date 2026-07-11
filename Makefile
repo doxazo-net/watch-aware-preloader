@@ -94,7 +94,9 @@ php-fix: ## Auto-fix PHP style (PHP-CS-Fixer)
 php-test: ## Run plain-PHP unit tests (test/*_test.php) + the render contract test
 	@for t in test/*_test.php; do [ -e "$$t" ] || continue; echo "== $$t =="; php "$$t" || exit 1; done
 	bash test/rc_preloadd_render_test.sh
+	bash test/rc_preloadd_estimate_test.sh
 	bash test/plg_render_test.sh
+	node test/meter_test.js
 
 .PHONY: smoke-test
 smoke-test: ## Smoke-test the install-by-URL cron-collation flow (#26)
