@@ -96,25 +96,38 @@ function wapReadSelection() {
 
 function wapFmtGiB(bytes) { return (bytes / 1073741824).toFixed(1) + ' GiB'; }
 
+// wapTierLabel capitalizes a tier token for display ("resume" -> "Resume",
+// "recently-added" -> "Recently-added").
+function wapTierLabel(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
+
 function wapPaint(est) {
   var meter = document.getElementById('wap-meter');
   if (!meter) { return; }
+  // budget_bytes can be 0 if the engine could not read available RAM. Treat that
+  // as "budget unavailable": show projected bytes only, no percentage/over/drops.
+  var hasBudget = est.budget_bytes > 0;
   var a = wapAggregate(est.rows || [], est.budget_bytes || 0, wapReadSelection());
-  var pct = est.budget_bytes > 0 ? (a.projected / est.budget_bytes) * 100 : 0;
-  var state = pct > 100 ? 'over' : (pct > 90 ? 'caution' : 'ok');
+  var pct = hasBudget ? (a.projected / est.budget_bytes) * 100 : 0;
+  var over = hasBudget && a.over;
+  var state = !hasBudget ? 'ok' : (pct > 100 ? 'over' : (pct > 90 ? 'caution' : 'ok'));
   var bar = meter.querySelector('.wap-bar-fill');
   bar.style.width = Math.min(pct, 100).toFixed(1) + '%';
   meter.setAttribute('data-state', state);
-  var over = meter.querySelector('.wap-over-fill');
-  over.style.width = pct > 100 ? Math.min(pct - 100, 100).toFixed(1) + '%' : '0';
+  var overEl = meter.querySelector('.wap-over-fill');
+  overEl.style.width = pct > 100 ? Math.min(pct - 100, 100).toFixed(1) + '%' : '0';
 
-  var line = wapFmtGiB(a.projected) + ' projected of ' + wapFmtGiB(est.budget_bytes) + ' budget';
-  if (a.over) { line += ' (over by ' + wapFmtGiB(a.projected - est.budget_bytes) + ')'; }
+  var line = wapFmtGiB(a.projected) + ' projected';
+  if (hasBudget) {
+    line += ' of ' + wapFmtGiB(est.budget_bytes) + ' budget';
+    if (over) { line += ' (over by ' + wapFmtGiB(a.projected - est.budget_bytes) + ')'; }
+  } else {
+    line += ' (budget unavailable)';
+  }
   meter.querySelector('.wap-meter-text').textContent = line;
 
   var drop = meter.querySelector('.wap-drop');
-  if (a.over && a.dropCount > 0) {
-    var parts = Object.keys(a.dropByTier).map(function (t) { return t + ' ' + a.dropByTier[t]; });
+  if (over && a.dropCount > 0) {
+    var parts = Object.keys(a.dropByTier).map(function (t) { return wapTierLabel(t) + ' ' + a.dropByTier[t]; });
     drop.textContent = a.dropCount + ' items past the cutline won’t warm — ' + parts.join(', ');
     drop.style.display = '';
   } else {
