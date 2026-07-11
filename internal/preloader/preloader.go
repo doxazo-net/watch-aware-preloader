@@ -59,9 +59,12 @@ type RunStats struct {
 	Skipped     int
 	Missing     int
 	BytesWarmed int64
-	ByTier      map[core.Tier]int
-	ByUser      map[string]int
-	Warmed      []WarmedRange
+	// ByTier and ByUser count only items actually preloaded this pass, so their
+	// values each sum to Preloaded (not Preloaded+Skipped). Already-resident
+	// items that were skipped are reflected only in the Skipped total.
+	ByTier map[core.Tier]int
+	ByUser map[string]int
+	Warmed []WarmedRange
 }
 
 // Preloader executes preload passes.
@@ -129,8 +132,6 @@ func (p *Preloader) Run(ctx context.Context, targets []core.PreloadTarget, budge
 		// all resident; any cold region can force a disk spin-up on open/seek.
 		if p.resident(hostPath, 0, pl.front) && p.resident(hostPath, pl.offset, pl.head) && p.resident(hostPath, pl.tailOffset, pl.tail) {
 			stats.Skipped++
-			stats.ByTier[t.Tier]++
-			stats.ByUser[t.Item.UserID]++
 			continue
 		}
 
