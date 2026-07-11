@@ -1,7 +1,7 @@
 #!/bin/bash
 # Off-host test of `rc.preloadd estimate`: it must invoke the engine binary with
 # `-estimate -config <config>`, bounded, and the usage string must list estimate.
-set -eu
+set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 rc="${here}/../src/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd"
@@ -34,8 +34,10 @@ case "$args" in
     *"-config"*"config.toml"*) ;; *) echo "FAIL: estimate did not pass -config <config> (got: $args)"; fail=1 ;;
 esac
 
-# Usage string lists the estimate subcommand.
-if ! bash "$rc" bogus 2>&1 | grep -q 'estimate'; then
+# Usage string lists the estimate subcommand. Capture the output first (the usage
+# path exits 1, which under `pipefail` would fail a `... | grep` even on a match).
+usage_out="$(bash "$rc" bogus 2>&1 || true)"
+if ! grep -q 'estimate' <<<"$usage_out"; then
     echo "FAIL: usage string does not list 'estimate'"; fail=1
 fi
 
