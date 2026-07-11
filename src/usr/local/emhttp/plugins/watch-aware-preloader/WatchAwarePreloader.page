@@ -289,8 +289,10 @@ $wapTiers = [
 </style>
 
 <?php if ($wapEstimate !== null) {
-    // Inert JSON data island: json_encode escapes </ to <\/ so the payload cannot
-    // break out of the <script> element. Rows are already anonymized {u,t,l,b,r}.
+    // Inert JSON data island. JSON_HEX_TAG escapes < and > to < / > so a
+    // "</script>" in any value cannot break out of the <script> element (this is
+    // the breakout guard; do not drop it). JSON_UNESCAPED_SLASHES keeps paths
+    // readable. Rows are already anonymized {u,t,l,b,r} - no id/title.
     $wapEstJson = json_encode($wapEstimate, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
     ?>
 <div id="wap-meter" class="wap-meter" data-state="ok">

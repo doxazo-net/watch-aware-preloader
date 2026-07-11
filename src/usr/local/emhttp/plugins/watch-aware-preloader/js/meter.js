@@ -128,7 +128,7 @@ function wapPaint(est) {
   var drop = meter.querySelector('.wap-drop');
   if (over && a.dropCount > 0) {
     var parts = Object.keys(a.dropByTier).map(function (t) { return wapTierLabel(t) + ' ' + a.dropByTier[t]; });
-    drop.textContent = a.dropCount + ' items past the cutline won’t warm — ' + parts.join(', ');
+    drop.textContent = a.dropCount + " items past the cutline won't warm - " + parts.join(', ');
     drop.style.display = '';
   } else {
     drop.style.display = 'none';
