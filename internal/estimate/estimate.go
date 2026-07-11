@@ -48,8 +48,10 @@ type Estimate struct {
 
 // Write atomically writes e as indented JSON to path (parent dir 0750, temp file
 // + fsync + rename, 0600 mode), mirroring internal/status.Write so a concurrent
-// reader never observes a partial file. Any failure is returned; callers treat
-// it as non-fatal.
+// reader never observes a partial file. Any failure is returned; the caller
+// decides how to treat it. Unlike a post-sweep status write (best-effort), the
+// estimate file is the -estimate mode's sole output, so that caller treats a
+// failure as fatal.
 func Write(path string, e Estimate) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
