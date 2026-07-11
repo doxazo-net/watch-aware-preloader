@@ -17,6 +17,8 @@ func TestSelectMode(t *testing.T) {
 		{name: "explicit -once", once: true, daemon: false, verify: false, wantMode: "once"},
 		{name: "-daemon", once: false, daemon: true, verify: false, wantMode: "daemon"},
 		{name: "-verify", once: false, daemon: false, verify: true, wantMode: "verify"},
+		{name: "-verify wins over -once/-daemon conflict", once: true, daemon: true, verify: true, wantMode: "verify"},
+		{name: "-verify with -daemon", once: false, daemon: true, verify: true, wantMode: "verify"},
 		{name: "-once and -daemon conflict", once: true, daemon: true, verify: false, wantErr: true},
 	}
 	for _, tc := range tests {
