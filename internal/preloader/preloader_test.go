@@ -17,6 +17,10 @@ type fakeCache struct {
 	warmed   []warmCall
 	resident int64
 	warmErr  error // returned by Warm when set
+	// residentPaths, when set, marks specific paths as fully resident
+	// regardless of the resident field, so a test can mix resident and cold
+	// targets in one run.
+	residentPaths map[string]bool
 }
 type warmCall struct {
 	path           string
@@ -27,7 +31,10 @@ func (f *fakeCache) Warm(path string, offset, length int64) error {
 	f.warmed = append(f.warmed, warmCall{path, offset, length})
 	return f.warmErr
 }
-func (f *fakeCache) Resident(_ string, _, length int64) (int64, bool, error) {
+func (f *fakeCache) Resident(path string, _, length int64) (int64, bool, error) {
+	if f.residentPaths[path] {
+		return length, true, nil // fully resident
+	}
 	if f.resident < 0 {
 		return 0, false, nil // residency unknown
 	}
@@ -411,10 +418,50 @@ func TestRunByUserCountsSkipResident(t *testing.T) {
 	if stats.Preloaded != 0 {
 		t.Fatalf("Preloaded = %d, want 0", stats.Preloaded)
 	}
-	if got := stats.ByUser["3"]; got != 2 {
-		t.Errorf("ByUser[3] = %d, want 2", got)
+	// Skipped-resident items must NOT be counted in ByUser/ByTier: those maps
+	// track only what was actually preloaded, so with nothing preloaded they
+	// are empty.
+	if len(stats.ByUser) != 0 {
+		t.Errorf("ByUser = %v, want empty (skipped items not counted)", stats.ByUser)
 	}
-	if got := stats.ByUser["7"]; got != 1 {
-		t.Errorf("ByUser[7] = %d, want 1", got)
+	if len(stats.ByTier) != 0 {
+		t.Errorf("ByTier = %v, want empty (skipped items not counted)", stats.ByTier)
+	}
+}
+
+// TestRunByTierCountsPreloadedOnly mixes already-resident and cold targets and
+// asserts the per-tier breakdown sums to Preloaded, not Preloaded+Skipped.
+func TestRunByTierCountsPreloadedOnly(t *testing.T) {
+	// "a" (resume) is fully resident -> skipped; "b"/"c" (next_up) are cold ->
+	// preloaded. residentPaths lets the fake report residency per path.
+	fs := fakeFS{
+		"/mnt/user/TV/a.mkv": 5 << 30,
+		"/mnt/user/TV/b.mkv": 5 << 30,
+		"/mnt/user/TV/c.mkv": 5 << 30,
+	}
+	cache := &fakeCache{resident: -1, residentPaths: map[string]bool{"/mnt/user/TV/a.mkv": true}}
+	p := New(testCfg(), cache, pathmap.New(nil), fs, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	targets := []core.PreloadTarget{
+		{Item: core.MediaItem{ID: "a", ServerPath: "/mnt/user/TV/a.mkv", BitrateBps: 8_000_000, UserID: "3"}, Tier: core.TierResume},
+		{Item: core.MediaItem{ID: "b", ServerPath: "/mnt/user/TV/b.mkv", BitrateBps: 8_000_000, UserID: "3"}, Tier: core.TierNextUp},
+		{Item: core.MediaItem{ID: "c", ServerPath: "/mnt/user/TV/c.mkv", BitrateBps: 8_000_000, UserID: "7"}, Tier: core.TierNextUp},
+	}
+	stats := p.Run(context.Background(), targets, 1<<40)
+
+	if stats.Preloaded != 2 || stats.Skipped != 1 {
+		t.Fatalf("Preloaded=%d Skipped=%d, want 2/1", stats.Preloaded, stats.Skipped)
+	}
+	sum := 0
+	for _, n := range stats.ByTier {
+		sum += n
+	}
+	if sum != stats.Preloaded {
+		t.Errorf("sum(ByTier)=%d, want Preloaded=%d", sum, stats.Preloaded)
+	}
+	if stats.ByTier[core.TierResume] != 0 {
+		t.Errorf("ByTier[resume]=%d, want 0 (the resume item was skipped)", stats.ByTier[core.TierResume])
+	}
+	if stats.ByTier[core.TierNextUp] != 2 {
+		t.Errorf("ByTier[next_up]=%d, want 2", stats.ByTier[core.TierNextUp])
 	}
 }
