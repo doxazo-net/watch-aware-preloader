@@ -68,3 +68,83 @@ function wapAggregate(rows, budgetBytes, sel) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { wapAggregate: wapAggregate };
 }
+
+// --- DOM layer (browser only) -------------------------------------------------
+// Reads the embedded estimate island + live form state, repaints #wap-meter on
+// every control change. The control tier keys map to the estimate tier tokens.
+var WAP_TIER_KEYS = { RESUME: 'resume', NEXTUP: 'next-up', RECENT: 'recently-added' };
+
+function wapCheckedValues(name) {
+  var set = new Set();
+  var els = document.querySelectorAll('input[name="' + name + '"]:checked');
+  for (var i = 0; i < els.length; i++) { set.add(els[i].value); }
+  return set;
+}
+
+function wapReadSelection() {
+  var tiers = {};
+  Object.keys(WAP_TIER_KEYS).forEach(function (k) {
+    var en = document.querySelector('input[name="TIER_' + k + '_ENABLED"]');
+    var mx = document.querySelector('input[name="TIER_' + k + '_MAX"]');
+    tiers[WAP_TIER_KEYS[k]] = {
+      enabled: en ? en.checked : true,
+      max: mx ? (parseInt(mx.value, 10) || 0) : 0,
+    };
+  });
+  return { users: wapCheckedValues('USERS[]'), libraries: wapCheckedValues('LIBRARIES[]'), tiers: tiers };
+}
+
+function wapFmtGiB(bytes) { return (bytes / 1073741824).toFixed(1) + ' GiB'; }
+
+function wapPaint(est) {
+  var meter = document.getElementById('wap-meter');
+  if (!meter) { return; }
+  var a = wapAggregate(est.rows || [], est.budget_bytes || 0, wapReadSelection());
+  var pct = est.budget_bytes > 0 ? (a.projected / est.budget_bytes) * 100 : 0;
+  var state = pct > 100 ? 'over' : (pct > 90 ? 'caution' : 'ok');
+  var bar = meter.querySelector('.wap-bar-fill');
+  bar.style.width = Math.min(pct, 100).toFixed(1) + '%';
+  meter.setAttribute('data-state', state);
+  var over = meter.querySelector('.wap-over-fill');
+  over.style.width = pct > 100 ? Math.min(pct - 100, 100).toFixed(1) + '%' : '0';
+
+  var line = wapFmtGiB(a.projected) + ' projected of ' + wapFmtGiB(est.budget_bytes) + ' budget';
+  if (a.over) { line += ' (over by ' + wapFmtGiB(a.projected - est.budget_bytes) + ')'; }
+  meter.querySelector('.wap-meter-text').textContent = line;
+
+  var drop = meter.querySelector('.wap-drop');
+  if (a.over && a.dropCount > 0) {
+    var parts = Object.keys(a.dropByTier).map(function (t) { return t + ' ' + a.dropByTier[t]; });
+    drop.textContent = a.dropCount + ' items past the cutline won’t warm — ' + parts.join(', ');
+    drop.style.display = '';
+  } else {
+    drop.style.display = 'none';
+  }
+}
+
+function wapInitMeter() {
+  var island = document.getElementById('wap-estimate');
+  var meter = document.getElementById('wap-meter');
+  if (!island || !meter) { return; }
+  var est;
+  try { est = JSON.parse(island.textContent || '{}'); } catch (e) { return; }
+  if (!est || !est.rows) { return; }
+  var repaint = function () { wapPaint(est); };
+  var inputs = document.querySelectorAll(
+    'input[name="USERS[]"], input[name="LIBRARIES[]"], ' +
+    'input[name^="TIER_"][name$="_ENABLED"], input[name^="TIER_"][name$="_MAX"]'
+  );
+  for (var i = 0; i < inputs.length; i++) {
+    inputs[i].addEventListener('change', repaint);
+    inputs[i].addEventListener('input', repaint);
+  }
+  repaint(); // initial paint from the saved selection
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wapInitMeter);
+  } else {
+    wapInitMeter();
+  }
+}
