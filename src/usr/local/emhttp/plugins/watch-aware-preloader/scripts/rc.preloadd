@@ -21,6 +21,10 @@ DEFAULT_CFG="${RUNTIME}/default.cfg"
 CRON="${FLASH}/${PLUGIN}.cron"
 BIN="${WAP_BIN:-${RUNTIME}/preloadd}"
 PICKERS="${WAP_PICKERS_PATH:-/var/local/preloadd/pickers.json}"
+# Warm-set projection (estimate.json). render() removes it so a settings change
+# (esp. RAM budget / target seconds) never leaves the budget meter showing a
+# projection computed under the old settings; the operator re-runs Estimate.
+ESTIMATE="${WAP_ESTIMATE_PATH:-/var/local/preloadd/estimate.json}"
 # Connection-test result (#36): test_connection persists its outcome here so the
 # settings page can show a readable pass/fail after the transient /update.php
 # progress popup closes.
@@ -309,6 +313,10 @@ ${path_map_toml}
 sweep_seconds = 60
 session_poll_seconds = 5
 EOF
+
+    # Drop any cached projection: it was computed under the previous settings, so
+    # the budget meter must not render it after a change. Estimate regenerates it.
+    rm -f "${ESTIMATE}"
 
     render_cron "$interval"
 }

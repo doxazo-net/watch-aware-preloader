@@ -33,7 +33,8 @@ function wapAggregate(rows, budgetBytes, sel) {
     const g = buckets[key].sort(function (a, b) { return a.r - b.r; });
     const tier = key.split('|')[1];
     const max = (sel.tiers[tier].max | 0);
-    capped = capped.concat(max > 0 ? g.slice(0, max) : g);
+    const take = max > 0 ? g.slice(0, max) : g;
+    for (let j = 0; j < take.length; j++) { capped.push(take[j]); }
   }
 
   // Global rank order for the budget cutline.
@@ -74,10 +75,22 @@ if (typeof module !== 'undefined' && module.exports) {
 // every control change. The control tier keys map to the estimate tier tokens.
 var WAP_TIER_KEYS = { RESUME: 'resume', NEXTUP: 'next-up', RECENT: 'recently-added' };
 
-function wapCheckedValues(name) {
+// wapSelectionSet reads the current selection for USERS[]/LIBRARIES[]. When the
+// checkbox group is rendered (pickers available), it returns the checked values
+// (empty = all). When it is NOT rendered (pickers unavailable, e.g. no successful
+// Test connection yet), the page emits a hidden scalar CSV of the SAVED selection
+// instead; fall back to that so a saved narrowed selection is not misread as "all".
+function wapSelectionSet(checkboxName, scalarName) {
   var set = new Set();
-  var els = document.querySelectorAll('input[name="' + name + '"]:checked');
-  for (var i = 0; i < els.length; i++) { set.add(els[i].value); }
+  var boxes = document.querySelectorAll('input[name="' + checkboxName + '"]');
+  if (boxes.length > 0) {
+    for (var i = 0; i < boxes.length; i++) { if (boxes[i].checked) { set.add(boxes[i].value); } }
+    return set;
+  }
+  var scalar = document.querySelector('input[name="' + scalarName + '"]');
+  if (scalar && scalar.value) {
+    scalar.value.split(',').forEach(function (v) { v = v.trim(); if (v) { set.add(v); } });
+  }
   return set;
 }
 
@@ -91,14 +104,28 @@ function wapReadSelection() {
       max: mx ? (parseInt(mx.value, 10) || 0) : 0,
     };
   });
-  return { users: wapCheckedValues('USERS[]'), libraries: wapCheckedValues('LIBRARIES[]'), tiers: tiers };
+  return { users: wapSelectionSet('USERS[]', 'USERS'), libraries: wapSelectionSet('LIBRARIES[]', 'LIBRARIES'), tiers: tiers };
+}
+
+// wapEstimateStale reports whether the operator has changed RAM% or target
+// seconds since this estimate was computed. Those feed the budget and per-item
+// sizing, which only the Go engine can recompute - so a change makes the shown
+// projection stale until "Estimate budget" is clicked again.
+function wapEstimateStale(est) {
+  var meta = est.meta || {};
+  var ramEl = document.querySelector('input[name="RAM_PERCENT"]');
+  var tgtEl = document.querySelector('input[name="TARGET_SECONDS"]');
+  if (ramEl && meta.ram_percent != null && parseInt(ramEl.value, 10) !== meta.ram_percent) { return true; }
+  if (tgtEl && meta.target_seconds != null && parseInt(tgtEl.value, 10) !== meta.target_seconds) { return true; }
+  return false;
 }
 
 function wapFmtGiB(bytes) { return (bytes / 1073741824).toFixed(1) + ' GiB'; }
 
-// wapTierLabel capitalizes a tier token for display ("resume" -> "Resume",
-// "recently-added" -> "Recently-added").
-function wapTierLabel(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
+// wapTierLabel maps a tier token to its display label (matching the settings
+// page's tier names). Falls back to the raw token for an unknown tier.
+var WAP_TIER_LABELS = { resume: 'Resume', 'next-up': 'Next-up', 'recently-added': 'Recently added' };
+function wapTierLabel(t) { return WAP_TIER_LABELS[t] || t; }
 
 function wapPaint(est) {
   var meter = document.getElementById('wap-meter');
@@ -106,16 +133,14 @@ function wapPaint(est) {
   // budget_bytes can be 0 if the engine could not read available RAM. Treat that
   // as "budget unavailable": show projected bytes only, no percentage/over/drops.
   var hasBudget = est.budget_bytes > 0;
-  var a = wapAggregate(est.rows || [], est.budget_bytes || 0, wapReadSelection());
+  var rows = Array.isArray(est.rows) ? est.rows : [];
+  var a = wapAggregate(rows, est.budget_bytes || 0, wapReadSelection());
   var pct = hasBudget ? (a.projected / est.budget_bytes) * 100 : 0;
   var over = hasBudget && a.over;
   var state = !hasBudget ? 'ok' : (pct > 100 ? 'over' : (pct > 90 ? 'caution' : 'ok'));
   var bar = meter.querySelector('.wap-bar-fill');
   bar.style.width = Math.min(pct, 100).toFixed(1) + '%';
   meter.setAttribute('data-state', state);
-  var overEl = meter.querySelector('.wap-over-fill');
-  overEl.style.width = pct > 100 ? Math.min(pct - 100, 100).toFixed(1) + '%' : '0';
-
   var line = wapFmtGiB(a.projected) + ' projected';
   if (hasBudget) {
     line += ' of ' + wapFmtGiB(est.budget_bytes) + ' budget';
@@ -128,10 +153,21 @@ function wapPaint(est) {
   var drop = meter.querySelector('.wap-drop');
   if (over && a.dropCount > 0) {
     var parts = Object.keys(a.dropByTier).map(function (t) { return wapTierLabel(t) + ' ' + a.dropByTier[t]; });
-    drop.textContent = a.dropCount + " items past the cutline won't warm - " + parts.join(', ');
+    var noun = a.dropCount === 1 ? ' item' : ' items';
+    drop.textContent = a.dropCount + noun + " past the cutline won't warm - " + parts.join(', ');
     drop.style.display = '';
   } else {
     drop.style.display = 'none';
+  }
+
+  var staleEl = meter.querySelector('.wap-stale');
+  if (staleEl) {
+    if (wapEstimateStale(est)) {
+      staleEl.textContent = 'RAM budget or target seconds changed since this estimate - click Estimate budget to refresh.';
+      staleEl.style.display = '';
+    } else {
+      staleEl.style.display = 'none';
+    }
   }
 }
 
@@ -141,11 +177,12 @@ function wapInitMeter() {
   if (!island || !meter) { return; }
   var est;
   try { est = JSON.parse(island.textContent || '{}'); } catch (e) { return; }
-  if (!est || !est.rows) { return; }
+  if (!est || !Array.isArray(est.rows)) { return; }
   var repaint = function () { wapPaint(est); };
   var inputs = document.querySelectorAll(
     'input[name="USERS[]"], input[name="LIBRARIES[]"], ' +
-    'input[name^="TIER_"][name$="_ENABLED"], input[name^="TIER_"][name$="_MAX"]'
+    'input[name^="TIER_"][name$="_ENABLED"], input[name^="TIER_"][name$="_MAX"], ' +
+    'input[name="RAM_PERCENT"], input[name="TARGET_SECONDS"]'
   );
   for (var i = 0; i < inputs.length; i++) {
     inputs[i].addEventListener('change', repaint);

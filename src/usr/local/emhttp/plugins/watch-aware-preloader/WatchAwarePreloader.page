@@ -281,11 +281,12 @@ $wapTiers = [
 .wap-meter-note { font-weight: normal; opacity: .7; }
 .wap-bar { position: relative; height: 1.25em; border: 1px solid #888; border-radius: 3px; overflow: hidden; background: rgba(128,128,128,.15); }
 .wap-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #3a7; transition: width .12s; }
-.wap-over-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: repeating-linear-gradient(45deg,#c33,#c33 6px,#a22 6px,#a22 12px); }
 .wap-meter[data-state="caution"] .wap-bar-fill { background: #e0a020; }
 .wap-meter[data-state="over"] .wap-bar-fill { background: #c33; }
+.wap-meter[data-state="over"] .wap-bar { border-color: #c33; box-shadow: 0 0 0 1px #c33; }
 .wap-meter-text { margin-top: .25em; }
 .wap-drop { margin-top: .2em; color: #c33; }
+.wap-stale { margin-top: .2em; color: #e0a020; font-style: italic; }
 </style>
 
 <?php if ($wapEstimate !== null) {
@@ -301,9 +302,10 @@ $wapTiers = [
         <span class="wap-meter-note">(estimate capped at <?= (int) ($wapEstimate['ceiling_per_user_tier'] ?? 0) ?>/tier)</span>
         <?php } ?>
     </div>
-    <div class="wap-bar"><div class="wap-bar-fill"></div><div class="wap-over-fill"></div></div>
+    <div class="wap-bar"><div class="wap-bar-fill"></div></div>
     <div class="wap-meter-text"></div>
     <div class="wap-drop" style="display:none"></div>
+    <div class="wap-stale" style="display:none"></div>
 </div>
 <script type="application/json" id="wap-estimate"><?= $wapEstJson ?></script>
 <script src="/plugins/watch-aware-preloader/js/meter.js"></script>
