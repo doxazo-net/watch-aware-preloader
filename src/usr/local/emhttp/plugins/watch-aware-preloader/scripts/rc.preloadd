@@ -439,6 +439,32 @@ run_now() {
     echo "Done. See the status panel for results."
 }
 
+estimate() {
+    if [ ! -x "${BIN}" ]; then
+        echo "FAIL: ${BIN} not found."
+        return 1
+    fi
+    echo "Computing a warm-set projection..."
+    # Runs inline in the /update.php progress frame; bound it like run_now so a
+    # wedged server query cannot hang the request. -estimate does read-only server
+    # queries only (no page-cache I/O), so it is safe to run on demand.
+    local limit=120 rc=0
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "${limit}" "${BIN}" -estimate -config "${CONFIG}" || rc=$?
+        if [ "${rc}" -eq 124 ]; then
+            echo "FAIL: estimate exceeded ${limit}s and was terminated."
+            return 1
+        elif [ "${rc}" -ne 0 ]; then
+            echo "FAIL: estimate exited with status ${rc}."
+            return "${rc}"
+        fi
+    else
+        echo "FAIL: timeout command not available; refusing to run estimate from the webGui."
+        return 1
+    fi
+    echo "Done. See the budget meter for the projection."
+}
+
 remove_cron() {
     rm -f "${CRON}"
     run_update_cron
@@ -452,6 +478,7 @@ case "${1:-}" in
     test)     test_connection ;;
     write-pickers) write_pickers ;;
     run-now)  run_now ;;
+    estimate) estimate ;;
     remove)   remove_cron ;;
-    *) echo "usage: rc.preloadd {install|update|render|seed|test|write-pickers|run-now|remove}" >&2; exit 1 ;;
+    *) echo "usage: rc.preloadd {install|update|render|seed|test|write-pickers|run-now|estimate|remove}" >&2; exit 1 ;;
 esac
