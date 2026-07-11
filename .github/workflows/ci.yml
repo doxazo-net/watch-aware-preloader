@@ -121,8 +121,12 @@ jobs:
           [ "$found" -eq 1 ] || echo "no PHP test scripts yet - skipping"
       - name: rc.preloadd render test (PHP -> bash .cfg contract)
         run: bash test/rc_preloadd_render_test.sh
+      - name: rc.preloadd estimate dispatch test
+        run: bash test/rc_preloadd_estimate_test.sh
       - name: .plg render CDATA safety test (#23)
         run: bash test/plg_render_test.sh
+      - name: JS meter unit test (pure aggregation)
+        run: node test/meter_test.js
 
   shell-smoke:
     name: Install-by-URL Smoke

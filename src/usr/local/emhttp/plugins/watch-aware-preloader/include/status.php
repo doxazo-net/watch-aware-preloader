@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 const WAP_STATUS_SCHEMA_VERSION = 1;
 const WAP_LAST_TEST_SCHEMA_VERSION = 1;
+const WAP_ESTIMATE_SCHEMA_VERSION = 1;
 
 /**
  * Decode and validate the engine's status.json.
@@ -54,6 +55,31 @@ function wap_read_last_test(string $path): ?array
         return null;
     }
     if (($data['schema_version'] ?? null) !== WAP_LAST_TEST_SCHEMA_VERSION) {
+        return null;
+    }
+    return $data;
+}
+
+/**
+ * Decode and validate the engine's estimate.json (the -estimate projection).
+ *
+ * @return array<string, mixed>|null the decoded estimate, or null when the file
+ *         is missing, unreadable, not valid JSON, or a different schema version.
+ */
+function wap_read_estimate(string $path): ?array
+{
+    if (!is_file($path)) {
+        return null;
+    }
+    $raw = @file_get_contents($path);
+    if ($raw === false) {
+        return null;
+    }
+    $data = json_decode($raw, true);
+    if (!\is_array($data)) {
+        return null;
+    }
+    if (($data['schema_version'] ?? null) !== WAP_ESTIMATE_SCHEMA_VERSION) {
         return null;
     }
     return $data;

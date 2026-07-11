@@ -20,6 +20,7 @@ $wapStatus     = wap_read_status($wapStatusPath);
 // Last connection-test result (#36), persisted by `rc.preloadd test` so it
 // survives the transient /update.php progress popup.
 $wapLastTest   = wap_read_last_test(wap_default_last_test_path());
+$wapEstimate   = wap_read_estimate(wap_default_estimate_path());
 
 $wapCfg = \function_exists('parse_plugin_cfg') ? parse_plugin_cfg('watch-aware-preloader') : [];
 // Declare $var explicitly: Unraid populates it in the page's including scope, but
@@ -263,6 +264,54 @@ $wapTiers = [
     <dd><span><input type="submit" value="Run now"></span></dd>
 </dl>
 </form>
+
+<form markdown="false" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#command" value="/usr/local/emhttp/plugins/watch-aware-preloader/scripts/rc.preloadd">
+<input type="hidden" name="#arg[1]" value="estimate">
+<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($wapCsrf) ?>">
+<dl>
+    <dt><strong>Estimate budget</strong></dt>
+    <dd><span><input type="submit" value="Estimate budget"></span></dd>
+</dl>
+</form>
+
+<style>
+.wap-meter { max-width: 640px; margin: .5em 0 1em; }
+.wap-meter-label { font-weight: bold; }
+.wap-meter-note { font-weight: normal; opacity: .7; }
+.wap-bar { position: relative; height: 1.25em; border: 1px solid #888; border-radius: 3px; overflow: hidden; background: rgba(128,128,128,.15); }
+.wap-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #3a7; transition: width .12s; }
+.wap-meter[data-state="caution"] .wap-bar-fill { background: #e0a020; }
+.wap-meter[data-state="over"] .wap-bar-fill { background: #c33; }
+.wap-meter[data-state="over"] .wap-bar { border-color: #c33; box-shadow: 0 0 0 1px #c33; }
+.wap-meter-text { margin-top: .25em; }
+.wap-drop { margin-top: .2em; color: #c33; }
+.wap-stale { margin-top: .2em; color: #e0a020; font-style: italic; }
+</style>
+
+<?php if ($wapEstimate !== null) {
+    // Inert JSON data island. JSON_HEX_TAG escapes < and > to < / > so a
+    // "</script>" in any value cannot break out of the <script> element (this is
+    // the breakout guard; do not drop it). JSON_UNESCAPED_SLASHES keeps paths
+    // readable. Rows are already anonymized {u,t,l,b,r} - no id/title.
+    $wapEstJson = json_encode($wapEstimate, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
+    ?>
+<div id="wap-meter" class="wap-meter" data-state="ok">
+    <div class="wap-meter-label">Projected warm set
+        <?php if (!empty($wapEstimate['meta']['ceiling_truncated'])) { ?>
+        <span class="wap-meter-note">(estimate capped at <?= (int) ($wapEstimate['ceiling_per_user_tier'] ?? 0) ?>/tier)</span>
+        <?php } ?>
+    </div>
+    <div class="wap-bar"><div class="wap-bar-fill"></div></div>
+    <div class="wap-meter-text"></div>
+    <div class="wap-drop" style="display:none"></div>
+    <div class="wap-stale" style="display:none"></div>
+</div>
+<script type="application/json" id="wap-estimate"><?= $wapEstJson ?></script>
+<script src="/plugins/watch-aware-preloader/js/meter.js"></script>
+<?php } else { ?>
+<blockquote class="inline_help">Click <strong>Estimate budget</strong> to project your current selection against the cache budget.</blockquote>
+<?php } ?>
 
 <table class="tablesorter shift ups">
 <thead><tr><th>Watch-Aware Preloader - last run</th></tr></thead>

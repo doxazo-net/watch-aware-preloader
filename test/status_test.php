@@ -81,6 +81,41 @@ check(wap_read_last_test($lt) === null, 'last-test invalid JSON returns null');
 @unlink($lt);
 @unlink($tmp);
 
+// --- wap_read_estimate: the projection written by rc.preloadd estimate.
+$est = tempnam(sys_get_temp_dir(), 'wapest');
+
+// Missing file -> null.
+unlink($est);
+check(wap_read_estimate($est) === null, 'estimate missing file returns null');
+
+// Valid schema_version 1 -> decoded array with rows.
+file_put_contents($est, json_encode([
+    'schema_version' => 1,
+    'generated_at' => '2026-07-10T21:05:00Z',
+    'budget_bytes' => 17179869184,
+    'ceiling_per_user_tier' => 200,
+    'rows' => [
+        ['u' => '3', 't' => 'resume', 'l' => 'L1', 'b' => 41155072, 'r' => 0],
+        ['u' => '7', 't' => 'next-up', 'l' => '', 'b' => 38000000, 'r' => 1],
+    ],
+    'meta' => ['target_seconds' => 20, 'ram_percent' => 50, 'item_count' => 2, 'ceiling_truncated' => false],
+]));
+$e = wap_read_estimate($est);
+check(is_array($e), 'valid estimate returns array');
+check(($e['budget_bytes'] ?? null) === 17179869184, 'budget_bytes decoded');
+check(is_array($e['rows'] ?? null) && count($e['rows']) === 2, 'rows decoded');
+check(($e['rows'][0]['t'] ?? null) === 'resume', 'row tier decoded');
+
+// Wrong schema_version -> null.
+file_put_contents($est, json_encode(['schema_version' => 2, 'rows' => []]));
+check(wap_read_estimate($est) === null, 'estimate schema_version mismatch returns null');
+
+// Non-JSON -> null.
+file_put_contents($est, 'not json');
+check(wap_read_estimate($est) === null, 'estimate invalid JSON returns null');
+
+@unlink($est);
+
 if ($failures > 0) {
     fwrite(STDERR, "{$failures} failure(s)\n");
     exit(1);
