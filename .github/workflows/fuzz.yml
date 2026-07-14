@@ -84,7 +84,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Restore Go build cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Shared across the matrix (keyed only on OS + go.sum) so the build
           # cache is stored once, not duplicated per fuzz target.
@@ -93,7 +93,7 @@ jobs:
           restore-keys: |
             fuzz-build-${{ runner.os }}-
       - name: Restore corpus cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Accumulated interesting inputs live in <pkg>/testdata/fuzz/<Fuzz>;
           # key on go.sum so a dependency bump starts a fresh corpus rather than
@@ -106,7 +106,7 @@ jobs:
         run: go test -run='^$' -fuzz='^${{ matrix.fuzz }}$' -fuzztime=10m ${{ matrix.pkg }}
       - name: Upload crash corpus
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz-crash-${{ matrix.fuzz }}
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fuzz }}
