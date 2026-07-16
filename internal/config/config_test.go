@@ -158,7 +158,7 @@ func TestValidateRejectsNonPositiveIntervals(t *testing.T) {
 
 func TestResidencyDefaults(t *testing.T) {
 	c := &Config{}
-	c.applyDefaults(false, false)
+	c.applyDefaults(false, false, nil)
 	if c.Residency.ProbeBytes != 1<<20 {
 		t.Errorf("ProbeBytes default = %d, want %d", c.Residency.ProbeBytes, 1<<20)
 	}
@@ -172,7 +172,7 @@ func TestResidencyDefaults(t *testing.T) {
 
 func TestTierDefaultsAllEnabled(t *testing.T) {
 	c := &Config{}
-	c.applyDefaults(false, false)
+	c.applyDefaults(false, false, nil)
 	if !c.Tiers.Resume.Enabled || !c.Tiers.NextUp.Enabled || !c.Tiers.RecentlyAdded.Enabled {
 		t.Errorf("no [tiers] block should enable every tier, got %+v", c.Tiers)
 	}
@@ -189,7 +189,12 @@ func TestTierExplicitConfigPreserved(t *testing.T) {
 		NextUp:        TierDial{Enabled: false},
 		RecentlyAdded: TierDial{Enabled: true},
 	}}
-	c.applyDefaults(true, false) // [tiers] present in the file
+	// [tiers] present in the file, with every legacy enabled flag stated.
+	c.applyDefaults(true, false, map[core.Tier]bool{
+		core.TierResume:        true,
+		core.TierNextUp:        false,
+		core.TierRecentlyAdded: true,
+	})
 	if c.Tiers.NextUp.Enabled {
 		t.Error("explicitly disabled next-up must stay disabled")
 	}
@@ -243,7 +248,7 @@ func TestTierNoBlockAllEnabledViaLoad(t *testing.T) {
 
 func TestDefaultTailMBIsFallback16(t *testing.T) {
 	var c Config
-	c.applyDefaults(false, false)
+	c.applyDefaults(false, false, nil)
 	if c.Preload.TailMB != 16 {
 		t.Errorf("default TailMB = %d, want 16 (flat fallback)", c.Preload.TailMB)
 	}
@@ -470,6 +475,39 @@ order = []
 `)
 	if len(c.Tiers.Order) != 0 {
 		t.Fatalf("order = %v, want empty", c.Tiers.Order)
+	}
+}
+
+func TestTierOrderNewShapeKeysDoNotTakeLegacyPath(t *testing.T) {
+	// A [tiers] block that defines only new-shape keys (order/override) or only
+	// max_items dials must resolve to the FULL default order. Routing these into
+	// the legacy *_ENABLED migration filters against all-false dials and resolves
+	// to an empty order, silently warming nothing.
+	full := TierOrder{core.TierResume, core.TierNextUp, core.TierRecentlyAdded}
+	for name, body := range map[string]string{
+		"override only":  "[tiers.override]\nbob = [\"resume\"]\n",
+		"max_items only": "[tiers.resume]\nmax_items = 5\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := writeAndLoad(t, body)
+			if !reflect.DeepEqual(c.Tiers.Order, full) {
+				t.Fatalf("order = %v, want the full default %v", c.Tiers.Order, full)
+			}
+		})
+	}
+}
+
+func TestTierOrderLegacyAbsentEnabledDefaultsOn(t *testing.T) {
+	// The genuine legacy path: only next_up is explicitly disabled. A tier whose
+	// enabled key is ABSENT keeps the pre-dials default (on), so only the
+	// explicitly disabled tier drops out.
+	c := writeAndLoad(t, `
+[tiers.next_up]
+enabled = false
+`)
+	want := TierOrder{core.TierResume, core.TierRecentlyAdded}
+	if !reflect.DeepEqual(c.Tiers.Order, want) {
+		t.Fatalf("order = %v, want %v", c.Tiers.Order, want)
 	}
 }
 

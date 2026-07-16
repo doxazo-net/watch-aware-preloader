@@ -21,6 +21,10 @@ type SweepOptions struct {
 	// both rank resolution and collection. Its ORDER is load-bearing and is not
 	// recoverable from Ranks: equal-rank users (the all-users default) fall back
 	// to the provider's order via the scorer's stable sort.
+	//
+	// Users is authoritative for enrollment ITERATION and Ranks for ELIGIBILITY,
+	// so Ranks must be resolved FROM this same list: a user in Ranks but absent
+	// from Users is never iterated and so silently contributes nothing.
 	Users            []emby.User
 	EnabledLibraries []string           // enabled library IDs, empty = all libraries (library-scope filter)
 	Tiers            config.TiersConfig // per-tier max-items dials

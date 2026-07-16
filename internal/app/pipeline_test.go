@@ -72,22 +72,6 @@ func (s *stubProvider) NowPlayingIDs(context.Context) (map[string]bool, error) {
 	return s.playing, nil
 }
 
-func TestResolveUserIDsAllWhenEmpty(t *testing.T) {
-	users := []emby.User{{ID: "1", Name: "jesse"}, {ID: "2", Name: "rachel"}}
-	got := ResolveUserIDs(users, nil)
-	if len(got) != 2 || got[0] != "1" || got[1] != "2" {
-		t.Fatalf("expected [1 2] in order, got %v", got)
-	}
-}
-
-func TestResolveUserIDsFiltersByName(t *testing.T) {
-	users := []emby.User{{ID: "1", Name: "jesse"}, {ID: "2", Name: "rachel"}}
-	got := ResolveUserIDs(users, []string{"rachel"})
-	if len(got) != 1 || got[0] != "2" {
-		t.Fatalf("expected [2], got %v", got)
-	}
-}
-
 func TestCollectCandidatesTiersAndPlaying(t *testing.T) {
 	p := &stubProvider{
 		users:   []emby.User{{ID: "1", Name: "jesse"}},
@@ -196,16 +180,6 @@ func TestCollectCandidatesTierDials(t *testing.T) {
 	}
 }
 
-func TestResolveUserIDsPreservesConfigOrder(t *testing.T) {
-	// Rank depends on this: the returned IDs must follow the CONFIG order, not
-	// the provider's. This function used to iterate the provider list.
-	users := []emby.User{{ID: "id-a", Name: "Alice"}, {ID: "id-b", Name: "Bob"}}
-	got := ResolveUserIDs(users, []string{"Bob", "Alice"})
-	if want := []string{"id-b", "id-a"}; !slices.Equal(got, want) {
-		t.Fatalf("ResolveUserIDs = %v, want %v", got, want)
-	}
-}
-
 func TestCollectCandidatesSkipsTierDisabledForOneUser(t *testing.T) {
 	// Alice keeps next-up, Bob disabled it. Bob's NextUp endpoint must not be
 	// called at all - the saved API call is behavior, not an optimization.
@@ -281,30 +255,4 @@ func replaceBackslash(s string) string {
 		}
 	}
 	return string(b)
-}
-
-func TestResolveUserIDsMatchesIdOrName(t *testing.T) {
-	users := []emby.User{
-		{ID: "id-alice", Name: "Alice"},
-		{ID: "id-bob", Name: "Bob"},
-	}
-	cases := []struct {
-		name    string
-		enabled []string
-		want    []string
-	}{
-		{"by id", []string{"id-alice"}, []string{"id-alice"}},
-		{"by name (legacy)", []string{"Bob"}, []string{"id-bob"}},
-		{"mixed id and name", []string{"id-alice", "Bob"}, []string{"id-alice", "id-bob"}},
-		{"empty means all", nil, []string{"id-alice", "id-bob"}},
-		{"no match yields none", []string{"nobody"}, nil},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ResolveUserIDs(users, tc.enabled)
-			if !slices.Equal(got, tc.want) {
-				t.Errorf("ResolveUserIDs(%v) = %v, want %v", tc.enabled, got, tc.want)
-			}
-		})
-	}
 }

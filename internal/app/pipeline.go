@@ -32,28 +32,6 @@ func capItems(items []core.MediaItem, limit int) []core.MediaItem {
 	return items
 }
 
-// ResolveUserIDs maps configured user IDs or names to IDs, PRESERVING THE
-// CONFIGURED ORDER: that order is the user rank (see ResolveRanks). An entry
-// matches a user by u.ID or u.Name (IDs are GUIDs and names are human strings,
-// so no collision). Entries matching no known user are skipped. An empty enabled
-// list selects all users in the provider's order.
-func ResolveUserIDs(users []emby.User, enabled []string) []string {
-	if len(enabled) == 0 {
-		ids := make([]string, 0, len(users))
-		for _, u := range users {
-			ids = append(ids, u.ID)
-		}
-		return ids
-	}
-	ids := make([]string, 0, len(enabled))
-	for _, key := range enabled {
-		if id, ok := resolveUserKey(users, key); ok {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
-
 // CollectCandidates fetches each enrolled user's enabled signal tiers plus the
 // global now-playing set. Enrollment and per-user tier enablement both come from
 // opts: a user absent from opts.TierRank is not enrolled, and a tier absent from

@@ -1,13 +1,21 @@
 package app
 
 import (
+	"bytes"
+	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
 )
+
+// captureLog returns a logger writing into buf, for asserting on warnings.
+func captureLog(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, nil))
+}
 
 var testUsers = []emby.User{
 	{ID: "id-a", Name: "Alice"},
@@ -96,6 +104,75 @@ func TestResolveRanksDuplicateUserKeepsFirstRank(t *testing.T) {
 	}
 	if len(got.UserRank) != 2 {
 		t.Fatalf("UserRank = %v, want exactly alice and bob", got.UserRank)
+	}
+}
+
+func TestResolveRanksUnknownEnabledUserIgnored(t *testing.T) {
+	// An enabled entry matching no known user is skipped, and must not consume a
+	// rank from the users that follow it.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Ghost", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	if len(got.UserRank) != 1 {
+		t.Fatalf("UserRank = %v, want only bob", got.UserRank)
+	}
+	if got.UserRank["id-b"] != 0 {
+		t.Fatalf("UserRank[id-b] = %d, want 0 (the skipped ghost must not consume a rank)", got.UserRank["id-b"])
+	}
+}
+
+func TestResolveRanksWarnsOnEmptyResolvedOrder(t *testing.T) {
+	// An empty order is legal ("warm nothing"), so it must warn, never fail. It
+	// must also name the key the operator has to edit.
+	for _, tc := range []struct {
+		name       string
+		mut        func(*config.Config)
+		wantSource string
+	}{
+		{"global order empty", func(c *config.Config) {
+			c.Tiers.Order = config.TierOrder{}
+		}, "tiers.order"},
+		{"override empty", func(c *config.Config) {
+			c.Tiers.Order = config.DefaultTierOrder()
+			c.Tiers.Override = map[string]config.TierOrder{"Alice": {}}
+		}, "tiers.override"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Users.Enabled = []string{"Alice"}
+			tc.mut(cfg)
+
+			var buf bytes.Buffer
+			got := ResolveRanks(cfg, testUsers, captureLog(&buf))
+
+			if _, ok := got.TierRank["id-a"]; !ok {
+				t.Fatal("alice must stay enrolled: an empty order is legal, not an error")
+			}
+			if len(got.TierRank["id-a"]) != 0 {
+				t.Fatalf("TierRank[id-a] = %v, want empty", got.TierRank["id-a"])
+			}
+			if !strings.Contains(buf.String(), "warm nothing") || !strings.Contains(buf.String(), tc.wantSource) {
+				t.Fatalf("want a warning naming %q, got %q", tc.wantSource, buf.String())
+			}
+		})
+	}
+}
+
+func TestResolveRanksNoWarnOnNonEmptyOrder(t *testing.T) {
+	// The warning must not fire spuriously for an ordinary config.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Alice", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	cfg.Tiers.Override = map[string]config.TierOrder{"Bob": {core.TierResume}}
+
+	var buf bytes.Buffer
+	ResolveRanks(cfg, testUsers, captureLog(&buf))
+
+	if strings.Contains(buf.String(), "warm nothing") {
+		t.Fatalf("empty-order warning fired for a populated config: %q", buf.String())
 	}
 }
 

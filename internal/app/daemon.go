@@ -15,7 +15,8 @@ import (
 
 // RunOnce performs one full pipeline pass: collect, rank, preload. When
 // opts.EnabledLibraries is non-empty, candidates are scoped to those libraries;
-// opts.Tiers controls which signal tiers contribute and their per-user caps.
+// opts.Ranks controls which signal tiers contribute, and opts.Tiers carries only
+// their per-user max-items caps.
 // opts.Mode and opts.StatusPath are unused here (only SweepAndRecord reads them).
 func RunOnce(ctx context.Context, p Provider, pre *preloader.Preloader, opts SweepOptions, log *slog.Logger) (preloader.RunStats, error) {
 	cands, playing, err := CollectCandidates(ctx, p, opts.Users, opts.EnabledLibraries, opts.Tiers, opts.Ranks, pre.ToHost, log)

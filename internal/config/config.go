@@ -17,7 +17,10 @@ type ServerConfig struct {
 
 // UsersConfig specifies which users to preload for.
 type UsersConfig struct {
-	Enabled []string `toml:"enabled"` // user names; empty => all users
+	// Enabled entries are a user ID or a display name. List ORDER is the user
+	// rank: earlier = higher priority, breaking ties within a slot. Empty => all
+	// users at equal rank.
+	Enabled []string `toml:"enabled"`
 }
 
 // LibrariesConfig scopes preloading to specific media libraries.
@@ -119,8 +122,6 @@ func (t TiersConfig) Dial(tier core.Tier) TierDial {
 		return t.NextUp
 	case core.TierRecentlyAdded:
 		return t.RecentlyAdded
-	case core.TierBingeAhead, core.TierBestEffort:
-		return TierDial{}
 	default:
 		return TierDial{}
 	}
@@ -180,7 +181,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding config: %w", err)
 	}
-	c.applyDefaults(md.IsDefined("tiers"), md.IsDefined("tiers", "order"))
+	c.applyDefaults(md.IsDefined("tiers"), md.IsDefined("tiers", "order"), legacyEnabledFlags(md, c.Tiers))
 	for _, key := range md.Undecoded() {
 		if key.String() == "server.api_key" {
 			return nil, fmt.Errorf("server.api_key must not be in config.toml; move it to the secrets file (%s) or the EMBY_API_KEY env var", c.SecretPath)
@@ -192,7 +193,25 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
-func (c *Config) applyDefaults(tiersDefined, orderDefined bool) {
+// legacyEnabledFlags reports each tier whose legacy `enabled` flag is actually
+// present in the TOML, mapped to its decoded value. Only a tier listed here has
+// an operator-stated opinion; a tier absent from the map has none. Presence is
+// read from metadata, not the decoded struct, so an explicit `enabled = false`
+// is distinguishable from an absent key.
+func legacyEnabledFlags(md toml.MetaData, t TiersConfig) map[core.Tier]bool {
+	flags := make(map[core.Tier]bool, len(tierNames))
+	for name, tier := range tierNames {
+		if md.IsDefined("tiers", name, "enabled") {
+			flags[tier] = t.Dial(tier).Enabled
+		}
+	}
+	return flags
+}
+
+// applyDefaults fills unset fields. tiersDefined and orderDefined report whether
+// [tiers] and [tiers] order are present in the TOML; legacyEnabled carries only
+// the tiers whose legacy `enabled` flag is present (see legacyEnabledFlags).
+func (c *Config) applyDefaults(tiersDefined, orderDefined bool, legacyEnabled map[core.Tier]bool) {
 	if c.Preload.RAMPercent == 0 {
 		c.Preload.RAMPercent = 50
 	}
@@ -236,16 +255,23 @@ func (c *Config) applyDefaults(tiersDefined, orderDefined bool) {
 	}
 	// Order resolution, in precedence order:
 	//   1. an explicit [tiers] order -> honored as-is (an empty order is legal)
-	//   2. no order, but legacy per-tier enabled flags -> default order filtered
-	//      to the enabled tiers, preserving pre-order semantics exactly
+	//   2. no order, but at least one legacy per-tier enabled flag -> default
+	//      order minus the tiers explicitly disabled, preserving pre-order
+	//      semantics exactly
 	//   3. neither -> the full default order
 	// orderDefined comes from TOML metadata, not the decoded value, so an
 	// explicit `order = []` is distinguishable from an absent key.
+	//
+	// The legacy branch is gated on a legacy `enabled` flag being DEFINED, not on
+	// [tiers] existing: a block holding only new-shape keys (order, override) or
+	// only max_items dials would otherwise filter against all-false dials and
+	// resolve to an empty order, silently warming nothing.
 	if !orderDefined {
-		if tiersDefined {
+		if len(legacyEnabled) > 0 {
 			c.Tiers.Order = TierOrder{}
 			for _, t := range DefaultTierOrder() {
-				if c.Tiers.Dial(t).Enabled {
+				// Absent flag = no operator opinion = the pre-dials default (on).
+				if enabled, stated := legacyEnabled[t]; !stated || enabled {
 					c.Tiers.Order = append(c.Tiers.Order, t)
 				}
 			}
