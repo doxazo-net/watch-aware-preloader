@@ -16,14 +16,3 @@ func TestTierString(t *testing.T) {
 		}
 	}
 }
-
-func TestTierOrdering(t *testing.T) {
-	// Lower value = higher priority; ordering must be stable for the scorer.
-	ascending := TierResume < TierNextUp &&
-		TierNextUp < TierRecentlyAdded &&
-		TierRecentlyAdded < TierBingeAhead &&
-		TierBingeAhead < TierBestEffort
-	if !ascending {
-		t.Fatal("tier constants are not in ascending priority order")
-	}
-}

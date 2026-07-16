@@ -212,6 +212,62 @@ func TestRankSharedItemInheritsBestRank(t *testing.T) {
 	}
 }
 
+// aliceResume builds one of alice's resume items at a given depth.
+func aliceResume(id string, off time.Duration) core.MediaItem {
+	return core.MediaItem{ID: id, UserID: "alice", ResumeOffset: off}
+}
+
+// mixedSlotZero is the shape the cases below need, and it requires a PER-USER
+// OVERRIDE: alice keeps the default order while bob promotes next-up, so their
+// two different tiers land in slot 0, and an empty enabled list puts both at
+// rank 0. Resume and non-resume items then share one comparison group. Equal
+// rank alone does not produce this, so a default install (no override key) was
+// never affected.
+func mixedSlotZero() RankOpts {
+	o := opts(
+		uo{"alice", defaultOrder},
+		uo{"bob", []core.Tier{core.TierNextUp, core.TierResume}},
+	)
+	o.UserRank["alice"] = 0
+	o.UserRank["bob"] = 0
+	return o
+}
+
+func TestRankResumeDepthHoldsAcrossForeignTierAtSameSlot(t *testing.T) {
+	// A foreign-tier item sharing slot 0 must not break the resume-depth
+	// ordering: the comparator's third key is a transitive pair, so it cannot
+	// report "equal" between a resume and a non-resume while the two resumes
+	// compare by depth.
+	cands := []Candidate{
+		{Item: aliceResume("r-small", 1*time.Minute), Tier: core.TierResume},
+		{Item: userItem("b-next", "bob"), Tier: core.TierNextUp},
+		{Item: aliceResume("r-big", 30*time.Minute), Tier: core.TierResume},
+	}
+	got := Rank(cands, nil, mixedSlotZero())
+	want := []string{"r-big", "r-small", "b-next"}
+	if ids := targetIDs(got); !reflect.DeepEqual(ids, want) {
+		t.Fatalf("order = %v, want %v", ids, want)
+	}
+}
+
+func TestRankResumeDepthSurvivesInterleavedForeignTiers(t *testing.T) {
+	// Several resumes interleaved with foreign-tier items at the same slot and
+	// rank. Every resume must precede every non-resume, resumes must run deepest
+	// first, and the non-resumes must keep their input order.
+	cands := []Candidate{
+		{Item: aliceResume("r1", 1*time.Minute), Tier: core.TierResume},
+		{Item: userItem("b1", "bob"), Tier: core.TierNextUp},
+		{Item: aliceResume("r2", 30*time.Minute), Tier: core.TierResume},
+		{Item: userItem("b2", "bob"), Tier: core.TierNextUp},
+		{Item: aliceResume("r3", 50*time.Minute), Tier: core.TierResume},
+	}
+	got := Rank(cands, nil, mixedSlotZero())
+	want := []string{"r3", "r2", "r1", "b1", "b2"}
+	if ids := targetIDs(got); !reflect.DeepEqual(ids, want) {
+		t.Fatalf("order = %v, want %v", ids, want)
+	}
+}
+
 func TestRankDedupKeepsBetterSlotNotLowerEnum(t *testing.T) {
 	// Same item at two tiers for one user who promoted next-up. The kept tier
 	// must be next-up (his slot 0), NOT resume (the lower enum value).

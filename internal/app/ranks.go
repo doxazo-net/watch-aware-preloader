@@ -58,7 +58,15 @@ func ResolveRanks(cfg *config.Config, users []emby.User, log *slog.Logger) score
 	// assign shares the global map across users rather than copying it per user.
 	// Safe only because nothing mutates a resolved order after construction; do
 	// not introduce a writer without copying first.
+	//
+	// An already-assigned user keeps their first (best) rank: the enabled list can
+	// name one user twice (say both a display name and an ID), and a re-assign
+	// would otherwise overwrite that rank without growing the map, handing the
+	// next user a colliding rank.
 	assign := func(id string, rank int) {
+		if _, seen := opts.UserRank[id]; seen {
+			return
+		}
 		opts.UserRank[id] = rank
 		if o, ok := overrides[id]; ok {
 			opts.TierRank[id] = o

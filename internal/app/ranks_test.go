@@ -79,6 +79,26 @@ func TestResolveRanksInheritsByAbsence(t *testing.T) {
 	}
 }
 
+func TestResolveRanksDuplicateUserKeepsFirstRank(t *testing.T) {
+	// Alice listed twice, by name and by ID. She must keep her first (best) rank,
+	// and the duplicate must not perturb the users listed after her.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Alice", "id-a", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	if got.UserRank["id-a"] != 0 {
+		t.Fatalf("UserRank[id-a] = %d, want 0 (first rank retained)", got.UserRank["id-a"])
+	}
+	if got.UserRank["id-b"] != 1 {
+		t.Fatalf("UserRank[id-b] = %d, want 1 (duplicate must not collide)", got.UserRank["id-b"])
+	}
+	if len(got.UserRank) != 2 {
+		t.Fatalf("UserRank = %v, want exactly alice and bob", got.UserRank)
+	}
+}
+
 func TestResolveRanksUnknownOverrideIgnored(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Users.Enabled = []string{"Alice"}

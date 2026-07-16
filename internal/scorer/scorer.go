@@ -3,6 +3,7 @@ package scorer
 
 import (
 	"sort"
+	"time"
 
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 )
@@ -19,6 +20,10 @@ type RankOpts struct {
 	// TierRank maps a user to their resolved tier positions (override or the
 	// inherited global). A tier absent from a user's map is disabled for that
 	// user. A user absent from TierRank contributes nothing.
+	//
+	// READ-ONLY: entries may be SHARED, one positions map aliased by every user
+	// that inherited the global order (see app.ResolveRanks). Mutating a
+	// resolved order in place would silently alter other users; copy first.
 	TierRank map[string]map[core.Tier]int
 	// UserRank maps a user to their enrollment rank; lower is higher priority.
 	// Equal values mean equal rank (the all-users default), and the stable sort
@@ -36,6 +41,18 @@ func (o RankOpts) slot(c Candidate) (int, bool) {
 	}
 	pos, ok := m[c.Tier]
 	return pos, ok
+}
+
+// resumeKey returns the tie-break pair for an item within an equal slot+rank
+// group: class 0 for a resume and 1 otherwise, plus the resume depth to order
+// resumes among themselves. Depth is forced to zero off the resume tier so
+// non-resumes tie with each other and keep their input order. The class test is
+// tier IDENTITY, not the core.Tier integer order, which carries no priority.
+func resumeKey(t core.PreloadTarget) (int, time.Duration) {
+	if t.Tier != core.TierResume {
+		return 1, 0
+	}
+	return 0, t.Item.ResumeOffset
 }
 
 // Rank filters out actively-playing items and tiers disabled for their user,
@@ -93,9 +110,18 @@ func Rank(candidates []Candidate, nowPlaying map[string]bool, opts RankOpts) []c
 		if si.rank != sj.rank {
 			return si.rank < sj.rank
 		}
-		// Within the resume tier, deeper resume positions go first.
-		if targets[i].Tier == core.TierResume && targets[j].Tier == core.TierResume {
-			return targets[i].Item.ResumeOffset > targets[j].Item.ResumeOffset
+		// Third key, as a transitive PAIR: resumes ahead of non-resumes, then
+		// deeper resume positions first. Comparing depth only when BOTH sides are
+		// resumes would make a resume and a non-resume compare equal while two
+		// resumes did not, which is intransitive and yields order-dependent
+		// output from a stable sort rather than an error.
+		ki, di := resumeKey(targets[i])
+		kj, dj := resumeKey(targets[j])
+		if ki != kj {
+			return ki < kj
+		}
+		if di != dj {
+			return di > dj
 		}
 		return false // stable: preserve input order
 	})
