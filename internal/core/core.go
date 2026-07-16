@@ -3,10 +3,15 @@ package core
 
 import "time"
 
-// Tier is the preload priority class; a lower value is higher priority.
+// Tier is the preload priority class. The integer values are NOT a priority
+// order: priority is configuration data resolved at runtime (see
+// config.TierOrder and scorer.RankOpts). Never compare two Tier values with
+// < or > to mean "higher priority"; look up their position in the resolved
+// order instead.
 type Tier int
 
-// Preload priority tiers; a lower value is a higher priority.
+// Preload signal tiers. Declaration order is the DEFAULT global order only
+// (applied by config.applyDefaults); it carries no meaning at comparison time.
 const (
 	TierResume        Tier = iota // recent incompletes, not currently playing
 	TierNextUp                    // next episode of an active series
