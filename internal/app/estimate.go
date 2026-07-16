@@ -78,12 +78,24 @@ func ProjectWarmSet(ctx context.Context, p Provider, cfg preloader.Config, budge
 		Resume:        config.TierDial{Enabled: true, MaxItems: estimateCeilingPerUserTier},
 		NextUp:        config.TierDial{Enabled: true, MaxItems: estimateCeilingPerUserTier},
 		RecentlyAdded: config.TierDial{Enabled: true, MaxItems: estimateCeilingPerUserTier},
+		Order:         config.DefaultTierOrder(),
 	}
+	users, err := p.Users(ctx)
+	if err != nil {
+		return estimate.Estimate{}, err
+	}
+	// The estimate projects the full universe: every user, every tier, default
+	// order, equal rank. Applying the configured cascade here would bake the
+	// current selection into estimate.json, and the meter's whole job is to let
+	// the operator explore selections the engine is not currently running.
+	fullCfg := &config.Config{Tiers: full}
+	ranks := ResolveRanks(fullCfg, users, log)
+
 	cands, playing, err := CollectCandidates(ctx, p, nil, nil, full, toHost, log)
 	if err != nil {
 		return estimate.Estimate{}, err
 	}
-	targets := scorer.Rank(cands, playing)
+	targets := scorer.Rank(cands, playing, ranks)
 
 	libs, err := p.Libraries(ctx)
 	if err != nil {

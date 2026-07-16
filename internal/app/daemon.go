@@ -18,11 +18,22 @@ import (
 // opts.Tiers controls which signal tiers contribute and their per-user caps.
 // opts.Mode and opts.StatusPath are unused here (only SweepAndRecord reads them).
 func RunOnce(ctx context.Context, p Provider, pre *preloader.Preloader, opts SweepOptions, log *slog.Logger) (preloader.RunStats, error) {
+	// Rank resolution needs the provider's user list to map configured names to
+	// IDs. SweepOptions carries the cascade's inputs rather than the resolved
+	// ranks, so rebuild the config view here.
+	users, err := p.Users(ctx)
+	if err != nil {
+		return preloader.RunStats{}, err
+	}
+	rankCfg := &config.Config{Tiers: opts.Tiers}
+	rankCfg.Users.Enabled = opts.Enabled
+	ranks := ResolveRanks(rankCfg, users, log)
+
 	cands, playing, err := CollectCandidates(ctx, p, opts.Enabled, opts.EnabledLibraries, opts.Tiers, pre.ToHost, log)
 	if err != nil {
 		return preloader.RunStats{}, err
 	}
-	targets := scorer.Rank(cands, playing)
+	targets := scorer.Rank(cands, playing, ranks)
 	stats := pre.Run(ctx, targets, opts.Budget)
 	log.Info("sweep complete",
 		"targets", len(targets), "preloaded", stats.Preloaded,

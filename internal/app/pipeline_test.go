@@ -16,11 +16,15 @@ func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard,
 
 // allTiers returns a TiersConfig with every tier enabled and no cap (the
 // applyDefaults result), for tests that call the pipeline directly.
+// allTiers mirrors what applyDefaults resolves for an all-tiers-enabled config:
+// the dials plus the matching order. Order carries enablement for the scorer, so
+// omitting it here would mean "warm nothing".
 func allTiers() config.TiersConfig {
 	return config.TiersConfig{
 		Resume:        config.TierDial{Enabled: true},
 		NextUp:        config.TierDial{Enabled: true},
 		RecentlyAdded: config.TierDial{Enabled: true},
+		Order:         config.DefaultTierOrder(),
 	}
 }
 
