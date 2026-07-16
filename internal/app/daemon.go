@@ -18,22 +18,11 @@ import (
 // opts.Tiers controls which signal tiers contribute and their per-user caps.
 // opts.Mode and opts.StatusPath are unused here (only SweepAndRecord reads them).
 func RunOnce(ctx context.Context, p Provider, pre *preloader.Preloader, opts SweepOptions, log *slog.Logger) (preloader.RunStats, error) {
-	// Rank resolution needs the provider's user list to map configured names to
-	// IDs. SweepOptions carries the cascade's inputs rather than the resolved
-	// ranks, so rebuild the config view here.
-	users, err := p.Users(ctx)
+	cands, playing, err := CollectCandidates(ctx, p, opts.Users, opts.EnabledLibraries, opts.Tiers, opts.Ranks, pre.ToHost, log)
 	if err != nil {
 		return preloader.RunStats{}, err
 	}
-	rankCfg := &config.Config{Tiers: opts.Tiers}
-	rankCfg.Users.Enabled = opts.Enabled
-	ranks := ResolveRanks(rankCfg, users, log)
-
-	cands, playing, err := CollectCandidates(ctx, p, opts.Enabled, opts.EnabledLibraries, opts.Tiers, pre.ToHost, log)
-	if err != nil {
-		return preloader.RunStats{}, err
-	}
-	targets := scorer.Rank(cands, playing, ranks)
+	targets := scorer.Rank(cands, playing, opts.Ranks)
 	stats := pre.Run(ctx, targets, opts.Budget)
 	log.Info("sweep complete",
 		"targets", len(targets), "preloaded", stats.Preloaded,
@@ -68,7 +57,14 @@ func (d *Daemon) budget() int64 {
 }
 
 func (d *Daemon) sweep(ctx context.Context) {
-	opts := SweepOptionsFromConfig(d.cfg, d.budget(), "daemon")
+	// Fetched per sweep, not cached: rank resolution maps configured names to
+	// IDs, and the server's user list can change between sweeps.
+	users, err := d.p.Users(ctx)
+	if err != nil {
+		d.log.Error("sweep failed: listing users", "err", err)
+		return
+	}
+	opts := SweepOptionsFromConfig(d.cfg, users, d.budget(), "daemon", d.log)
 	if _, err := SweepAndRecord(ctx, d.p, d.pre, opts, d.log); err != nil {
 		d.log.Error("sweep failed", "err", err)
 	}

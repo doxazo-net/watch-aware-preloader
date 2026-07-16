@@ -91,7 +91,7 @@ func ProjectWarmSet(ctx context.Context, p Provider, cfg preloader.Config, budge
 	fullCfg := &config.Config{Tiers: full}
 	ranks := ResolveRanks(fullCfg, users, log)
 
-	cands, playing, err := CollectCandidates(ctx, p, nil, nil, full, toHost, log)
+	cands, playing, err := CollectCandidates(ctx, p, users, nil, full, ranks, toHost, log)
 	if err != nil {
 		return estimate.Estimate{}, err
 	}

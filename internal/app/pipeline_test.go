@@ -10,6 +10,7 @@ import (
 	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
+	"github.com/doxazo-net/watch-aware-preloader/internal/scorer"
 )
 
 func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -28,6 +29,13 @@ func allTiers() config.TiersConfig {
 	}
 }
 
+// allTiersRanked resolves allTiers() into RankOpts for the given users, matching
+// what the sweep call chain feeds CollectCandidates. Enrollment and per-user tier
+// enablement live in RankOpts, so a collection test needs both halves.
+func allTiersRanked(users []emby.User) scorer.RankOpts {
+	return ResolveRanks(&config.Config{Tiers: allTiers()}, users, discardLog())
+}
+
 type stubProvider struct {
 	users     []emby.User
 	libraries []emby.Library
@@ -35,6 +43,13 @@ type stubProvider struct {
 	nextUp    map[string][]core.MediaItem
 	latest    map[string][]core.MediaItem
 	playing   map[string]bool
+
+	// Per-tier call recorders, appended with the user ID each fetch is made for.
+	// A tier disabled for a user must leave no entry: the skipped API call is
+	// behavior, not an optimization.
+	resumeCalls []string
+	nextUpCalls []string
+	latestCalls []string
 }
 
 func (s *stubProvider) Users(context.Context) ([]emby.User, error) { return s.users, nil }
@@ -42,12 +57,15 @@ func (s *stubProvider) Libraries(context.Context) ([]emby.Library, error) {
 	return s.libraries, nil
 }
 func (s *stubProvider) Resume(_ context.Context, id string) ([]core.MediaItem, error) {
+	s.resumeCalls = append(s.resumeCalls, id)
 	return s.resume[id], nil
 }
 func (s *stubProvider) NextUp(_ context.Context, id string) ([]core.MediaItem, error) {
+	s.nextUpCalls = append(s.nextUpCalls, id)
 	return s.nextUp[id], nil
 }
 func (s *stubProvider) RecentlyAdded(_ context.Context, id string) ([]core.MediaItem, error) {
+	s.latestCalls = append(s.latestCalls, id)
 	return s.latest[id], nil
 }
 func (s *stubProvider) NowPlayingIDs(context.Context) (map[string]bool, error) {
@@ -78,7 +96,7 @@ func TestCollectCandidatesTiersAndPlaying(t *testing.T) {
 		latest:  map[string][]core.MediaItem{"1": {{ID: "l1"}}},
 		playing: map[string]bool{"x": true},
 	}
-	cands, playing, err := CollectCandidates(context.Background(), p, nil, nil, allTiers(), nil, discardLog())
+	cands, playing, err := CollectCandidates(context.Background(), p, p.users, nil, allTiers(), allTiersRanked(p.users), nil, discardLog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +145,7 @@ func TestCollectCandidatesLibraryScope(t *testing.T) {
 		}
 		return "", false
 	}
-	cands, _, err := CollectCandidates(context.Background(), p, nil, []string{"m"}, allTiers(), toHost, discardLog())
+	cands, _, err := CollectCandidates(context.Background(), p, p.users, []string{"m"}, allTiers(), allTiersRanked(p.users), toHost, discardLog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,13 +161,16 @@ func TestCollectCandidatesTierDials(t *testing.T) {
 		nextUp: map[string][]core.MediaItem{"1": {{ID: "n1"}}},
 		latest: map[string][]core.MediaItem{"1": {{ID: "l1"}, {ID: "l2"}, {ID: "l3"}}},
 	}
-	// Disable next-up entirely; cap recently-added to 2; keep resume on.
+	// Disable next-up entirely; cap recently-added to 2; keep resume on. The
+	// order carries enablement (next-up is absent from it); the dials carry caps.
 	tiers := config.TiersConfig{
 		Resume:        config.TierDial{Enabled: true},
 		NextUp:        config.TierDial{Enabled: false},
 		RecentlyAdded: config.TierDial{Enabled: true, MaxItems: 2},
+		Order:         config.TierOrder{core.TierResume, core.TierRecentlyAdded},
 	}
-	cands, _, err := CollectCandidates(context.Background(), p, nil, nil, tiers, nil, discardLog())
+	ranks := ResolveRanks(&config.Config{Tiers: tiers}, p.users, discardLog())
+	cands, _, err := CollectCandidates(context.Background(), p, p.users, nil, tiers, ranks, nil, discardLog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,6 +193,83 @@ func TestCollectCandidatesTierDials(t *testing.T) {
 	}
 	if len(cands) != 3 { // r1 + l1 + l2
 		t.Errorf("expected 3 candidates (resume 1 + recently-added 2), got %d", len(cands))
+	}
+}
+
+func TestResolveUserIDsPreservesConfigOrder(t *testing.T) {
+	// Rank depends on this: the returned IDs must follow the CONFIG order, not
+	// the provider's. This function used to iterate the provider list.
+	users := []emby.User{{ID: "id-a", Name: "Alice"}, {ID: "id-b", Name: "Bob"}}
+	got := ResolveUserIDs(users, []string{"Bob", "Alice"})
+	if want := []string{"id-b", "id-a"}; !slices.Equal(got, want) {
+		t.Fatalf("ResolveUserIDs = %v, want %v", got, want)
+	}
+}
+
+func TestCollectCandidatesSkipsTierDisabledForOneUser(t *testing.T) {
+	// Alice keeps next-up, Bob disabled it. Bob's NextUp endpoint must not be
+	// called at all - the saved API call is behavior, not an optimization.
+	p := &stubProvider{
+		users: []emby.User{{ID: "id-a", Name: "Alice"}, {ID: "id-b", Name: "Bob"}},
+	}
+	opts := scorer.RankOpts{
+		TierRank: map[string]map[core.Tier]int{
+			"id-a": {core.TierResume: 0, core.TierNextUp: 1},
+			"id-b": {core.TierResume: 0},
+		},
+		UserRank: map[string]int{"id-a": 0, "id-b": 1},
+	}
+	_, _, err := CollectCandidates(context.Background(), p, p.users, nil, config.TiersConfig{}, opts, nil, discardLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.nextUpCalls; !slices.Equal(got, []string{"id-a"}) {
+		t.Fatalf("NextUp called for %v, want only [id-a]", got)
+	}
+	if got := p.resumeCalls; !slices.Equal(got, []string{"id-a", "id-b"}) {
+		t.Fatalf("Resume called for %v, want both users", got)
+	}
+}
+
+func TestCollectCandidatesSkipsUnenrolledUser(t *testing.T) {
+	// Bob is absent from TierRank, so he is not enrolled: no tier of his is
+	// fetched at all.
+	p := &stubProvider{
+		users: []emby.User{{ID: "id-a", Name: "Alice"}, {ID: "id-b", Name: "Bob"}},
+	}
+	opts := scorer.RankOpts{
+		TierRank: map[string]map[core.Tier]int{"id-a": {core.TierResume: 0}},
+		UserRank: map[string]int{"id-a": 0},
+	}
+	_, _, err := CollectCandidates(context.Background(), p, p.users, nil, config.TiersConfig{}, opts, nil, discardLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.resumeCalls; !slices.Equal(got, []string{"id-a"}) {
+		t.Fatalf("Resume called for %v, want only [id-a]", got)
+	}
+	if len(p.nextUpCalls)+len(p.latestCalls) != 0 {
+		t.Fatalf("unenrolled user was fetched: nextUp=%v latest=%v", p.nextUpCalls, p.latestCalls)
+	}
+}
+
+func TestCollectCandidatesStampsUserID(t *testing.T) {
+	// The collection loop stamps UserID rather than trusting the provider to.
+	// RankOpts.slot answers an unstamped item with a bare skip, so an adapter
+	// that forgot the field would warm nothing and still report a clean sweep.
+	p := &stubProvider{
+		users:  []emby.User{{ID: "id-a", Name: "Alice"}},
+		resume: map[string][]core.MediaItem{"id-a": {{ID: "r1"}}}, // UserID deliberately unset
+	}
+	cands, _, err := CollectCandidates(context.Background(), p, p.users, nil, allTiers(), allTiersRanked(p.users), nil, discardLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cands) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(cands))
+	}
+	if cands[0].Item.UserID != "id-a" {
+		t.Fatalf("UserID = %q, want id-a (the loop must stamp it)", cands[0].Item.UserID)
 	}
 }
 
