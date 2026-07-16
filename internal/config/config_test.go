@@ -3,10 +3,46 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 )
+
+// writeAndLoad writes body to a temp config.toml (prefixed with a minimal
+// valid [server] block unless body already has one) and loads it, failing
+// the test on error.
+func writeAndLoad(t *testing.T, body string) *Config {
+	t.Helper()
+	c, err := load(t, body)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	return c
+}
+
+// loadErr writes body to a temp config.toml (with the same minimal-server
+// prefix as writeAndLoad) and loads it, returning the error for the caller to
+// inspect.
+func loadErr(t *testing.T, body string) (*Config, error) {
+	t.Helper()
+	return load(t, body)
+}
+
+func load(t *testing.T, body string) (*Config, error) {
+	t.Helper()
+	full := body
+	if !strings.Contains(body, "[server]") {
+		full = "[server]\ntype = \"emby\"\nurl = \"http://h:8096\"\n" + body
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(p, []byte(full), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return Load(p)
+}
 
 const sample = `
 [server]
@@ -122,7 +158,7 @@ func TestValidateRejectsNonPositiveIntervals(t *testing.T) {
 
 func TestResidencyDefaults(t *testing.T) {
 	c := &Config{}
-	c.applyDefaults(false)
+	c.applyDefaults(false, false)
 	if c.Residency.ProbeBytes != 1<<20 {
 		t.Errorf("ProbeBytes default = %d, want %d", c.Residency.ProbeBytes, 1<<20)
 	}
@@ -136,7 +172,7 @@ func TestResidencyDefaults(t *testing.T) {
 
 func TestTierDefaultsAllEnabled(t *testing.T) {
 	c := &Config{}
-	c.applyDefaults(false)
+	c.applyDefaults(false, false)
 	if !c.Tiers.Resume.Enabled || !c.Tiers.NextUp.Enabled || !c.Tiers.RecentlyAdded.Enabled {
 		t.Errorf("no [tiers] block should enable every tier, got %+v", c.Tiers)
 	}
@@ -153,7 +189,7 @@ func TestTierExplicitConfigPreserved(t *testing.T) {
 		NextUp:        TierDial{Enabled: false},
 		RecentlyAdded: TierDial{Enabled: true},
 	}}
-	c.applyDefaults(true) // [tiers] present in the file
+	c.applyDefaults(true, false) // [tiers] present in the file
 	if c.Tiers.NextUp.Enabled {
 		t.Error("explicitly disabled next-up must stay disabled")
 	}
@@ -207,7 +243,7 @@ func TestTierNoBlockAllEnabledViaLoad(t *testing.T) {
 
 func TestDefaultTailMBIsFallback16(t *testing.T) {
 	var c Config
-	c.applyDefaults(false)
+	c.applyDefaults(false, false)
 	if c.Preload.TailMB != 16 {
 		t.Errorf("default TailMB = %d, want 16 (flat fallback)", c.Preload.TailMB)
 	}
@@ -376,6 +412,78 @@ func TestSecretPathDefault(t *testing.T) {
 	}
 	if c.SecretPath != "/boot/config/plugins/watch-aware-preloader/secrets.toml" {
 		t.Errorf("SecretPath default = %q", c.SecretPath)
+	}
+}
+
+func TestTierOrderDefaults(t *testing.T) {
+	// No [tiers] block: default order, every tier enabled, no cap. Matches
+	// the pre-order behavior exactly.
+	c := writeAndLoad(t, ``)
+	want := TierOrder{core.TierResume, core.TierNextUp, core.TierRecentlyAdded}
+	if !reflect.DeepEqual(c.Tiers.Order, want) {
+		t.Fatalf("order = %v, want %v", c.Tiers.Order, want)
+	}
+	if len(c.Tiers.Override) != 0 {
+		t.Fatalf("override = %v, want empty", c.Tiers.Override)
+	}
+}
+
+func TestTierOrderLegacyEnabledMapsToOrder(t *testing.T) {
+	// A legacy config that disables next_up must render an order without it.
+	c := writeAndLoad(t, `
+[tiers.resume]
+enabled = true
+[tiers.next_up]
+enabled = false
+[tiers.recently_added]
+enabled = true
+`)
+	want := TierOrder{core.TierResume, core.TierRecentlyAdded}
+	if !reflect.DeepEqual(c.Tiers.Order, want) {
+		t.Fatalf("order = %v, want %v", c.Tiers.Order, want)
+	}
+}
+
+func TestTierOrderExplicitAndOverride(t *testing.T) {
+	c := writeAndLoad(t, `
+[tiers]
+order = ["next_up", "resume"]
+[tiers.override]
+bob = ["resume"]
+`)
+	if want := (TierOrder{core.TierNextUp, core.TierResume}); !reflect.DeepEqual(c.Tiers.Order, want) {
+		t.Fatalf("order = %v, want %v", c.Tiers.Order, want)
+	}
+	if want := (TierOrder{core.TierResume}); !reflect.DeepEqual(c.Tiers.Override["bob"], want) {
+		t.Fatalf("override[bob] = %v, want %v", c.Tiers.Override["bob"], want)
+	}
+	if _, ok := c.Tiers.Override["alice"]; ok {
+		t.Fatal("alice must have no override entry (inheritance is by absence)")
+	}
+}
+
+func TestTierOrderEmptyIsLegal(t *testing.T) {
+	// An empty order means "warm nothing"; it is a choice, not an error.
+	c := writeAndLoad(t, `
+[tiers]
+order = []
+`)
+	if len(c.Tiers.Order) != 0 {
+		t.Fatalf("order = %v, want empty", c.Tiers.Order)
+	}
+}
+
+func TestTierOrderRejectsBadInput(t *testing.T) {
+	for name, body := range map[string]string{
+		"unknown tier":   "[tiers]\norder = [\"bogus\"]\n",
+		"duplicate tier": "[tiers]\norder = [\"resume\", \"resume\"]\n",
+		"bad override":   "[tiers.override]\nbob = [\"bogus\"]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadErr(t, body); err == nil {
+				t.Fatal("want error, got nil")
+			}
+		})
 	}
 }
 
