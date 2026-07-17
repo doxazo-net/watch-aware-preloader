@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"log/slog"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/doxazo-net/watch-aware-preloader/internal/config"
@@ -124,21 +123,20 @@ func TestResolveRanksUnknownEnabledUserIgnored(t *testing.T) {
 	}
 }
 
-func TestResolveRanksWarnsOnEmptyResolvedOrder(t *testing.T) {
-	// An empty order is legal ("warm nothing"), so it must warn, never fail. It
-	// must also name the key the operator has to edit.
+func TestResolveRanksEmptyResolvedOrderStaysEnrolled(t *testing.T) {
+	// An empty order is legal ("warm nothing") and only ever explicit, so the user
+	// stays enrolled with an empty order and the sweep says nothing about it.
 	for _, tc := range []struct {
-		name       string
-		mut        func(*config.Config)
-		wantSource string
+		name string
+		mut  func(*config.Config)
 	}{
 		{"global order empty", func(c *config.Config) {
 			c.Tiers.Order = config.TierOrder{}
-		}, "tiers.order"},
+		}},
 		{"override empty", func(c *config.Config) {
 			c.Tiers.Order = config.DefaultTierOrder()
 			c.Tiers.Override = map[string]config.TierOrder{"Alice": {}}
-		}, "tiers.override"},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &config.Config{}
@@ -154,25 +152,10 @@ func TestResolveRanksWarnsOnEmptyResolvedOrder(t *testing.T) {
 			if len(got.TierRank["id-a"]) != 0 {
 				t.Fatalf("TierRank[id-a] = %v, want empty", got.TierRank["id-a"])
 			}
-			if !strings.Contains(buf.String(), "warm nothing") || !strings.Contains(buf.String(), tc.wantSource) {
-				t.Fatalf("want a warning naming %q, got %q", tc.wantSource, buf.String())
+			if buf.Len() != 0 {
+				t.Fatalf("an explicit warm-nothing order must log nothing, got %q", buf.String())
 			}
 		})
-	}
-}
-
-func TestResolveRanksNoWarnOnNonEmptyOrder(t *testing.T) {
-	// The warning must not fire spuriously for an ordinary config.
-	cfg := &config.Config{}
-	cfg.Users.Enabled = []string{"Alice", "Bob"}
-	cfg.Tiers.Order = config.DefaultTierOrder()
-	cfg.Tiers.Override = map[string]config.TierOrder{"Bob": {core.TierResume}}
-
-	var buf bytes.Buffer
-	ResolveRanks(cfg, testUsers, captureLog(&buf))
-
-	if strings.Contains(buf.String(), "warm nothing") {
-		t.Fatalf("empty-order warning fired for a populated config: %q", buf.String())
 	}
 }
 

@@ -20,15 +20,6 @@ func resolveUserKey(users []emby.User, key string) (string, bool) {
 	return "", false
 }
 
-// orderSource names which config key an empty order came from, so the warning
-// points at the key the operator has to edit.
-func orderSource(overridden bool) string {
-	if overridden {
-		return "tiers.override"
-	}
-	return "tiers.order"
-}
-
 // tierPositions turns an order into a tier -> position lookup.
 func tierPositions(o config.TierOrder) map[core.Tier]int {
 	m := make(map[core.Tier]int, len(o))
@@ -72,9 +63,11 @@ func ResolveRanks(cfg *config.Config, users []emby.User, log *slog.Logger) score
 	// name one user twice (say both a display name and an ID), and a re-assign
 	// would otherwise overwrite that rank without growing the map, handing the
 	// next user a colliding rank.
-	// An enrolled user whose resolved order is empty warms nothing. That is legal
-	// (an explicit `order = []` states it), so this warns rather than fails, but it
-	// is never silent.
+	//
+	// An empty resolved order (the user warms nothing) is reachable only when the
+	// operator asked for it explicitly (`order = []`, an empty override, or every
+	// legacy dial false), so it passes without comment. This runs once per sweep;
+	// warning here would nag about a deliberate choice on every pass.
 	assign := func(id string, rank int) {
 		if _, seen := opts.UserRank[id]; seen {
 			return
@@ -85,10 +78,6 @@ func ResolveRanks(cfg *config.Config, users []emby.User, log *slog.Logger) score
 			order = global
 		}
 		opts.TierRank[id] = order
-		if len(order) == 0 {
-			log.Warn("enrolled user has an empty tier order and will warm nothing",
-				"user", id, "source", orderSource(overridden))
-		}
 	}
 
 	if len(cfg.Users.Enabled) == 0 {

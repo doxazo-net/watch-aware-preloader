@@ -158,7 +158,7 @@ func TestValidateRejectsNonPositiveIntervals(t *testing.T) {
 
 func TestResidencyDefaults(t *testing.T) {
 	c := &Config{}
-	c.applyDefaults(false, false, nil)
+	c.applyDefaults(false, nil)
 	if c.Residency.ProbeBytes != 1<<20 {
 		t.Errorf("ProbeBytes default = %d, want %d", c.Residency.ProbeBytes, 1<<20)
 	}
@@ -170,11 +170,13 @@ func TestResidencyDefaults(t *testing.T) {
 	}
 }
 
-func TestTierDefaultsAllEnabled(t *testing.T) {
+func TestTierDefaultsNoDialsIsFullOrderNoCap(t *testing.T) {
+	// No [tiers] block: the full default order (the thing the engine reads), and
+	// no max-items cap.
 	c := &Config{}
-	c.applyDefaults(false, false, nil)
-	if !c.Tiers.Resume.Enabled || !c.Tiers.NextUp.Enabled || !c.Tiers.RecentlyAdded.Enabled {
-		t.Errorf("no [tiers] block should enable every tier, got %+v", c.Tiers)
+	c.applyDefaults(false, nil)
+	if !reflect.DeepEqual(c.Tiers.Order, DefaultTierOrder()) {
+		t.Errorf("order = %v, want the full default %v", c.Tiers.Order, DefaultTierOrder())
 	}
 	if c.Tiers.RecentlyAdded.MaxItems != 0 {
 		t.Errorf("default MaxItems should be 0 (no cap), got %d", c.Tiers.RecentlyAdded.MaxItems)
@@ -182,21 +184,20 @@ func TestTierDefaultsAllEnabled(t *testing.T) {
 }
 
 func TestTierExplicitConfigPreserved(t *testing.T) {
-	// An operator who configures any dial opts into explicit control: the
-	// all-enabled default must NOT clobber their choices.
+	// An operator who states every legacy dial gets exactly the enabled ones, and
+	// their max_items survives defaulting.
 	c := &Config{Tiers: TiersConfig{
 		Resume:        TierDial{Enabled: true, MaxItems: 5},
 		NextUp:        TierDial{Enabled: false},
 		RecentlyAdded: TierDial{Enabled: true},
 	}}
-	// [tiers] present in the file, with every legacy enabled flag stated.
-	c.applyDefaults(true, false, map[core.Tier]bool{
+	c.applyDefaults(false, map[core.Tier]bool{
 		core.TierResume:        true,
 		core.TierNextUp:        false,
 		core.TierRecentlyAdded: true,
 	})
-	if c.Tiers.NextUp.Enabled {
-		t.Error("explicitly disabled next-up must stay disabled")
+	if want := (TierOrder{core.TierResume, core.TierRecentlyAdded}); !reflect.DeepEqual(c.Tiers.Order, want) {
+		t.Errorf("order = %v, want %v (explicitly disabled next-up dropped)", c.Tiers.Order, want)
 	}
 	if c.Tiers.Resume.MaxItems != 5 {
 		t.Errorf("explicit resume MaxItems clobbered, got %d", c.Tiers.Resume.MaxItems)
@@ -204,9 +205,9 @@ func TestTierExplicitConfigPreserved(t *testing.T) {
 }
 
 func TestTierAllDisabledHonoredViaLoad(t *testing.T) {
-	// The case IsDefined fixes: an operator disables every tier. The decoded
-	// TiersConfig is all-zero, but because [tiers] IS defined in the file, the
-	// all-enabled default must NOT clobber it.
+	// An operator disables every tier. The decoded TiersConfig is all-zero and
+	// indistinguishable from an unset one, so the derivation reads flag PRESENCE
+	// from metadata to honor this rather than resolve the full default order.
 	const body = `
 [server]
 type = "emby"
@@ -226,13 +227,13 @@ enabled = false
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Tiers.Resume.Enabled || c.Tiers.NextUp.Enabled || c.Tiers.RecentlyAdded.Enabled {
-		t.Errorf("explicitly disabled tiers must stay disabled, got %+v", c.Tiers)
+	if len(c.Tiers.Order) != 0 {
+		t.Errorf("every tier explicitly disabled must resolve to an empty order, got %v", c.Tiers.Order)
 	}
 }
 
-func TestTierNoBlockAllEnabledViaLoad(t *testing.T) {
-	// No [tiers] block in the sample config: every tier enabled with no cap.
+func TestTierNoBlockFullOrderViaLoad(t *testing.T) {
+	// No [tiers] block in the sample config: the full default order, no cap.
 	p := filepath.Join(t.TempDir(), "c.toml")
 	if err := os.WriteFile(p, []byte(sample), 0o600); err != nil {
 		t.Fatal(err)
@@ -241,14 +242,14 @@ func TestTierNoBlockAllEnabledViaLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Tiers.Resume.Enabled || !c.Tiers.NextUp.Enabled || !c.Tiers.RecentlyAdded.Enabled {
-		t.Errorf("no [tiers] block should enable every tier, got %+v", c.Tiers)
+	if !reflect.DeepEqual(c.Tiers.Order, DefaultTierOrder()) {
+		t.Errorf("no [tiers] block should resolve to the full default order, got %v", c.Tiers.Order)
 	}
 }
 
 func TestDefaultTailMBIsFallback16(t *testing.T) {
 	var c Config
-	c.applyDefaults(false, false, nil)
+	c.applyDefaults(false, nil)
 	if c.Preload.TailMB != 16 {
 		t.Errorf("default TailMB = %d, want 16 (flat fallback)", c.Preload.TailMB)
 	}
@@ -420,32 +421,49 @@ func TestSecretPathDefault(t *testing.T) {
 	}
 }
 
-func TestTierOrderDefaults(t *testing.T) {
-	// No [tiers] block: default order, every tier enabled, no cap. Matches
-	// the pre-order behavior exactly.
-	c := writeAndLoad(t, ``)
-	want := TierOrder{core.TierResume, core.TierNextUp, core.TierRecentlyAdded}
-	if !reflect.DeepEqual(c.Tiers.Order, want) {
-		t.Fatalf("order = %v, want %v", c.Tiers.Order, want)
-	}
-	if len(c.Tiers.Override) != 0 {
-		t.Fatalf("override = %v, want empty", c.Tiers.Override)
-	}
-}
-
-func TestTierOrderLegacyEnabledMapsToOrder(t *testing.T) {
-	// A legacy config that disables next_up must render an order without it.
-	c := writeAndLoad(t, `
-[tiers.resume]
-enabled = true
-[tiers.next_up]
-enabled = false
-[tiers.recently_added]
-enabled = true
-`)
-	want := TierOrder{core.TierResume, core.TierRecentlyAdded}
-	if !reflect.DeepEqual(c.Tiers.Order, want) {
-		t.Fatalf("order = %v, want %v", c.Tiers.Order, want)
+// TestTierOrderResolution is the single table of record for how a config file
+// resolves to c.Tiers.Order. Every row runs through the real Load.
+func TestTierOrderResolution(t *testing.T) {
+	full := TierOrder{core.TierResume, core.TierNextUp, core.TierRecentlyAdded}
+	for _, tc := range []struct {
+		name string
+		body string
+		want TierOrder
+	}{
+		// Legacy dials, allow-list reading: any explicit enabled = true makes the
+		// explicitly-true set the whole order. An operator who opts one tier IN is
+		// not asking for the other two.
+		{"legacy single true is an allow-list", "[tiers.resume]\nenabled = true\n",
+			TierOrder{core.TierResume}},
+		{"legacy mixed: an explicit true wins over a false",
+			"[tiers.resume]\nenabled = true\n[tiers.next_up]\nenabled = false\n",
+			TierOrder{core.TierResume}},
+		{"legacy all true is the full order",
+			"[tiers.resume]\nenabled = true\n[tiers.next_up]\nenabled = true\n[tiers.recently_added]\nenabled = true\n",
+			full},
+		// Legacy dials, deny-list reading: with only false values stated, an absent
+		// key keeps its pre-dials default (on), so only the stated tiers drop out.
+		{"legacy single false is a deny-list", "[tiers.next_up]\nenabled = false\n",
+			TierOrder{core.TierResume, core.TierRecentlyAdded}},
+		{"legacy all false warms nothing",
+			"[tiers.resume]\nenabled = false\n[tiers.next_up]\nenabled = false\n[tiers.recently_added]\nenabled = false\n",
+			TierOrder{}},
+		// No legacy enabled key defined at all: the derivation must not run, or it
+		// would filter against all-false dials and silently warm nothing.
+		{"new-shape override only", "[tiers.override]\nbob = [\"resume\"]\n", full},
+		{"new-shape max_items only", "[tiers.resume]\nmax_items = 5\n", full},
+		{"no [tiers] block at all", ``, full},
+		// An explicit order always wins, including the empty "warm nothing" order.
+		{"explicit empty order is legal", "[tiers]\norder = []\n", TierOrder{}},
+		{"explicit order is verbatim", "[tiers]\norder = [\"nextup\", \"resume\"]\n",
+			TierOrder{core.TierNextUp, core.TierResume}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := writeAndLoad(t, tc.body)
+			if !reflect.DeepEqual(c.Tiers.Order, tc.want) {
+				t.Fatalf("order = %v, want %v", c.Tiers.Order, tc.want)
+			}
+		})
 	}
 }
 
@@ -464,50 +482,6 @@ bob = ["resume"]
 	}
 	if _, ok := c.Tiers.Override["alice"]; ok {
 		t.Fatal("alice must have no override entry (inheritance is by absence)")
-	}
-}
-
-func TestTierOrderEmptyIsLegal(t *testing.T) {
-	// An empty order means "warm nothing"; it is a choice, not an error.
-	c := writeAndLoad(t, `
-[tiers]
-order = []
-`)
-	if len(c.Tiers.Order) != 0 {
-		t.Fatalf("order = %v, want empty", c.Tiers.Order)
-	}
-}
-
-func TestTierOrderNewShapeKeysDoNotTakeLegacyPath(t *testing.T) {
-	// A [tiers] block that defines only new-shape keys (order/override) or only
-	// max_items dials must resolve to the FULL default order. Routing these into
-	// the legacy *_ENABLED migration filters against all-false dials and resolves
-	// to an empty order, silently warming nothing.
-	full := TierOrder{core.TierResume, core.TierNextUp, core.TierRecentlyAdded}
-	for name, body := range map[string]string{
-		"override only":  "[tiers.override]\nbob = [\"resume\"]\n",
-		"max_items only": "[tiers.resume]\nmax_items = 5\n",
-	} {
-		t.Run(name, func(t *testing.T) {
-			c := writeAndLoad(t, body)
-			if !reflect.DeepEqual(c.Tiers.Order, full) {
-				t.Fatalf("order = %v, want the full default %v", c.Tiers.Order, full)
-			}
-		})
-	}
-}
-
-func TestTierOrderLegacyAbsentEnabledDefaultsOn(t *testing.T) {
-	// The genuine legacy path: only next_up is explicitly disabled. A tier whose
-	// enabled key is ABSENT keeps the pre-dials default (on), so only the
-	// explicitly disabled tier drops out.
-	c := writeAndLoad(t, `
-[tiers.next_up]
-enabled = false
-`)
-	want := TierOrder{core.TierResume, core.TierRecentlyAdded}
-	if !reflect.DeepEqual(c.Tiers.Order, want) {
-		t.Fatalf("order = %v, want %v", c.Tiers.Order, want)
 	}
 }
 
