@@ -16,6 +16,12 @@ on:
     - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC
   workflow_dispatch:
 
+# No workflow-level scopes: every job below grants itself exactly what it needs
+# (both currently read `contents`). A job-level block REPLACES this one rather
+# than adding to it, so a future job that declares nothing gets nothing instead
+# of silently inheriting the repo default token.
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
