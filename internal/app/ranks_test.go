@@ -1,0 +1,262 @@
+package app
+
+import (
+	"bytes"
+	"log/slog"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
+	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
+)
+
+// captureLog returns a logger writing into buf, for asserting on warnings.
+func captureLog(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, nil))
+}
+
+var testUsers = []emby.User{
+	{ID: "id-a", Name: "Alice"},
+	{ID: "id-b", Name: "Bob"},
+	{ID: "id-c", Name: "Cara"},
+}
+
+func TestResolveRanksUsesConfigOrderNotServerOrder(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Cara", "Alice"} // deliberately not server order
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	if got.UserRank["id-c"] != 0 || got.UserRank["id-a"] != 1 {
+		t.Fatalf("UserRank = %v, want cara=0 alice=1", got.UserRank)
+	}
+	if _, ok := got.TierRank["id-b"]; ok {
+		t.Fatal("bob is not enrolled and must contribute nothing")
+	}
+}
+
+func TestResolveRanksEmptyEnabledIsAllUsersEqualRank(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	for _, id := range []string{"id-a", "id-b", "id-c"} {
+		if got.UserRank[id] != 0 {
+			t.Fatalf("UserRank[%s] = %d, want 0 (equal rank)", id, got.UserRank[id])
+		}
+		if len(got.TierRank[id]) != 3 {
+			t.Fatalf("TierRank[%s] = %v, want all three tiers", id, got.TierRank[id])
+		}
+	}
+}
+
+func TestResolveRanksOverrideBindsByNameOrID(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"id-a", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	cfg.Tiers.Override = map[string]config.TierOrder{
+		"Alice": {core.TierNextUp},                  // by display name
+		"id-b":  {core.TierResume, core.TierNextUp}, // by ID
+	}
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	if want := (map[core.Tier]int{core.TierNextUp: 0}); !reflect.DeepEqual(got.TierRank["id-a"], want) {
+		t.Fatalf("TierRank[id-a] = %v, want %v", got.TierRank["id-a"], want)
+	}
+	if want := (map[core.Tier]int{core.TierResume: 0, core.TierNextUp: 1}); !reflect.DeepEqual(got.TierRank["id-b"], want) {
+		t.Fatalf("TierRank[id-b] = %v, want %v", got.TierRank["id-b"], want)
+	}
+}
+
+func TestResolveRanksInheritsByAbsence(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Alice", "Bob"}
+	cfg.Tiers.Order = config.TierOrder{core.TierResume, core.TierNextUp}
+	cfg.Tiers.Override = map[string]config.TierOrder{"Bob": {core.TierNextUp}}
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	want := map[core.Tier]int{core.TierResume: 0, core.TierNextUp: 1}
+	if !reflect.DeepEqual(got.TierRank["id-a"], want) {
+		t.Fatalf("alice TierRank = %v, want the global %v", got.TierRank["id-a"], want)
+	}
+}
+
+func TestResolveRanksDuplicateUserKeepsFirstRank(t *testing.T) {
+	// Alice listed twice, by name and by ID. She must keep her first (best) rank,
+	// and the duplicate must not perturb the users listed after her.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Alice", "id-a", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	if got.UserRank["id-a"] != 0 {
+		t.Fatalf("UserRank[id-a] = %d, want 0 (first rank retained)", got.UserRank["id-a"])
+	}
+	if got.UserRank["id-b"] != 1 {
+		t.Fatalf("UserRank[id-b] = %d, want 1 (duplicate must not collide)", got.UserRank["id-b"])
+	}
+	if len(got.UserRank) != 2 {
+		t.Fatalf("UserRank = %v, want exactly alice and bob", got.UserRank)
+	}
+}
+
+func TestResolveRanksUnknownEnabledUserIgnored(t *testing.T) {
+	// An enabled entry matching no known user is skipped, and must not consume a
+	// rank from the users that follow it.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Ghost", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, testUsers, discardLog())
+
+	if len(got.UserRank) != 1 {
+		t.Fatalf("UserRank = %v, want only bob", got.UserRank)
+	}
+	if got.UserRank["id-b"] != 0 {
+		t.Fatalf("UserRank[id-b] = %d, want 0 (the skipped ghost must not consume a rank)", got.UserRank["id-b"])
+	}
+}
+
+func TestResolveRanksEmptyResolvedOrderStaysEnrolled(t *testing.T) {
+	// An empty order is legal ("warm nothing") and only ever explicit, so the user
+	// stays enrolled with an empty order and the sweep says nothing about it.
+	for _, tc := range []struct {
+		name string
+		mut  func(*config.Config)
+	}{
+		{"global order empty", func(c *config.Config) {
+			c.Tiers.Order = config.TierOrder{}
+		}},
+		{"override empty", func(c *config.Config) {
+			c.Tiers.Order = config.DefaultTierOrder()
+			c.Tiers.Override = map[string]config.TierOrder{"Alice": {}}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Users.Enabled = []string{"Alice"}
+			tc.mut(cfg)
+
+			var buf bytes.Buffer
+			got := ResolveRanks(cfg, testUsers, captureLog(&buf))
+
+			if _, ok := got.TierRank["id-a"]; !ok {
+				t.Fatal("alice must stay enrolled: an empty order is legal, not an error")
+			}
+			if len(got.TierRank["id-a"]) != 0 {
+				t.Fatalf("TierRank[id-a] = %v, want empty", got.TierRank["id-a"])
+			}
+			if buf.Len() != 0 {
+				t.Fatalf("an explicit warm-nothing order must log nothing, got %q", buf.String())
+			}
+		})
+	}
+}
+
+func TestResolveRanksUnknownOverrideIgnored(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Alice"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	cfg.Tiers.Override = map[string]config.TierOrder{"Ghost": {core.TierResume}}
+
+	got := ResolveRanks(cfg, testUsers, discardLog()) // must not panic
+
+	if len(got.TierRank) != 1 {
+		t.Fatalf("TierRank = %v, want only alice", got.TierRank)
+	}
+}
+
+// dupNameUsers has two users sharing the display name "Alice", so a name-keyed
+// reference to her is ambiguous while an ID-keyed one is not.
+var dupNameUsers = []emby.User{
+	{ID: "id-a", Name: "Alice"},
+	{ID: "id-d", Name: "Alice"},
+	{ID: "id-b", Name: "Bob"},
+}
+
+func TestResolveRanksAmbiguousNameIsRejected(t *testing.T) {
+	// Two users named Alice: enrolling "Alice" must resolve to NEITHER. Picking
+	// the first would bind enrollment to the server's arbitrary list order and
+	// warm the wrong person's media.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Alice", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	var buf bytes.Buffer
+	got := ResolveRanks(cfg, dupNameUsers, captureLog(&buf))
+
+	if _, ok := got.UserRank["id-a"]; ok {
+		t.Error("id-a enrolled from an ambiguous name")
+	}
+	if _, ok := got.UserRank["id-d"]; ok {
+		t.Error("id-d enrolled from an ambiguous name")
+	}
+	if got.UserRank["id-b"] != 0 {
+		t.Errorf("UserRank[id-b] = %d, want 0 (the skip must not consume a rank)", got.UserRank["id-b"])
+	}
+	if !strings.Contains(buf.String(), "matches several users") {
+		t.Errorf("expected an ambiguity warning, got: %s", buf.String())
+	}
+}
+
+func TestResolveRanksExactIDResolvesDespiteDuplicateNames(t *testing.T) {
+	// The operator disambiguates with an ID; that must still work.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"id-d"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, dupNameUsers, discardLog())
+
+	if got.UserRank["id-d"] != 0 || len(got.UserRank) != 1 {
+		t.Fatalf("UserRank = %v, want only id-d at rank 0", got.UserRank)
+	}
+}
+
+func TestResolveRanksOverrideExactIDBeatsNameAlias(t *testing.T) {
+	// "Alice" and "id-a" are two override keys for ONE user. Override is a map, so
+	// applying them in iteration order would let Go's randomized ordering decide
+	// the winner. The exact ID must win every time.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"id-a"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	cfg.Tiers.Override = map[string]config.TierOrder{
+		"Alice": {core.TierNextUp},
+		"id-a":  {core.TierResume},
+	}
+
+	want := map[core.Tier]int{core.TierResume: 0}
+	// Repeated because the defect this guards is map-iteration nondeterminism: a
+	// single pass could pass by luck.
+	for i := 0; i < 50; i++ {
+		got := ResolveRanks(cfg, testUsers, discardLog())
+		if !reflect.DeepEqual(got.TierRank["id-a"], want) {
+			t.Fatalf("run %d: TierRank[id-a] = %v, want %v (exact ID wins)", i, got.TierRank["id-a"], want)
+		}
+	}
+}
+
+func TestResolveRanksOverrideAmbiguousNameIgnored(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"id-a"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	cfg.Tiers.Override = map[string]config.TierOrder{"Alice": {core.TierNextUp}}
+
+	var buf bytes.Buffer
+	got := ResolveRanks(cfg, dupNameUsers, captureLog(&buf))
+
+	// id-a falls back to the global order rather than taking the ambiguous override.
+	want := map[core.Tier]int{core.TierResume: 0, core.TierNextUp: 1, core.TierRecentlyAdded: 2}
+	if !reflect.DeepEqual(got.TierRank["id-a"], want) {
+		t.Fatalf("TierRank[id-a] = %v, want the global order %v", got.TierRank["id-a"], want)
+	}
+	if !strings.Contains(buf.String(), "ambiguous user name") {
+		t.Errorf("expected an ambiguity warning, got: %s", buf.String())
+	}
+}

@@ -32,74 +32,62 @@ func capItems(items []core.MediaItem, limit int) []core.MediaItem {
 	return items
 }
 
-// ResolveUserIDs maps configured user IDs or names to IDs. An entry matches a user
-// by u.ID or u.Name (IDs are GUIDs and names are human strings, so no collision).
-// An empty enabled list selects all users.
-func ResolveUserIDs(users []emby.User, enabled []string) []string {
-	if len(enabled) == 0 {
-		ids := make([]string, 0, len(users))
-		for _, u := range users {
-			ids = append(ids, u.ID)
-		}
-		return ids
-	}
-	want := map[string]bool{}
-	for _, n := range enabled {
-		want[n] = true
-	}
-	var ids []string
-	for _, u := range users {
-		if want[u.ID] || want[u.Name] {
-			ids = append(ids, u.ID)
-		}
-	}
-	return ids
-}
-
-// CollectCandidates fetches the enabled signal tiers for each enabled user plus
-// the global now-playing set. The tiers dials skip a disabled tier entirely (no
-// fetch) and cap each tier's per-user contribution to MaxItems (0 = no cap).
-// When enabledLibraries is non-empty, candidates are filtered to items that fall
-// under one of those libraries; toHost (the preloader's path mapper) normalizes
-// item paths and library locations to a common host-path namespace for the
-// comparison. An empty enabledLibraries leaves candidates unfiltered.
-func CollectCandidates(ctx context.Context, p Provider, enabled, enabledLibraries []string, tiers config.TiersConfig, toHost libscope.ToHost, log *slog.Logger) ([]scorer.Candidate, map[string]bool, error) {
-	users, err := p.Users(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+// CollectCandidates fetches each enrolled user's enabled signal tiers plus the
+// global now-playing set. Enrollment and per-user tier enablement both come from
+// opts: a user absent from opts.TierRank is not enrolled, and a tier absent from
+// their map is skipped entirely (no fetch). Per-tier MaxItems dials still cap
+// each user's contribution (0 = no cap).
+//
+// users is supplied by the caller rather than fetched here because rank
+// resolution already needs it, and because its ORDER is load-bearing in a way
+// opts cannot express: equal-rank users (the all-users default) fall back to the
+// provider's order via the scorer's stable sort.
+//
+// When enabledLibraries is non-empty, candidates are filtered to items under one
+// of those libraries; toHost normalizes item paths and library locations to a
+// common host-path namespace. An empty enabledLibraries leaves candidates
+// unfiltered.
+func CollectCandidates(ctx context.Context, p Provider, users []emby.User, enabledLibraries []string, tiers config.TiersConfig, opts scorer.RankOpts, toHost libscope.ToHost, log *slog.Logger) ([]scorer.Candidate, map[string]bool, error) {
 	playing, err := p.NowPlayingIDs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var cands []scorer.Candidate
-	add := func(items []core.MediaItem, dial config.TierDial, tier core.Tier) {
-		for _, it := range capItems(items, dial.MaxItems) {
-			cands = append(cands, scorer.Candidate{Item: it, Tier: tier})
-		}
+	fetch := map[core.Tier]func(context.Context, string) ([]core.MediaItem, error){
+		core.TierResume:        p.Resume,
+		core.TierNextUp:        p.NextUp,
+		core.TierRecentlyAdded: p.RecentlyAdded,
 	}
-	for _, id := range ResolveUserIDs(users, enabled) {
-		if tiers.Resume.Enabled {
-			resume, err := p.Resume(ctx, id)
-			if err != nil {
-				return nil, nil, err
-			}
-			add(resume, tiers.Resume, core.TierResume)
+
+	var cands []scorer.Candidate
+	for _, u := range users {
+		order, enrolled := opts.TierRank[u.ID]
+		if !enrolled {
+			continue
 		}
-		if tiers.NextUp.Enabled {
-			nextUp, err := p.NextUp(ctx, id)
+		// Iterate the default order, not the user's map, so fetches are
+		// deterministic. The map's positions drive priority; iteration order does
+		// not.
+		for _, tier := range config.DefaultTierOrder() {
+			if _, on := order[tier]; !on {
+				continue
+			}
+			get, ok := fetch[tier]
+			if !ok {
+				continue // reserved tier with no provider endpoint yet
+			}
+			items, err := get(ctx, u.ID)
 			if err != nil {
 				return nil, nil, err
 			}
-			add(nextUp, tiers.NextUp, core.TierNextUp)
-		}
-		if tiers.RecentlyAdded.Enabled {
-			latest, err := p.RecentlyAdded(ctx, id)
-			if err != nil {
-				return nil, nil, err
+			for _, it := range capItems(items, tiers.Dial(tier).MaxItems) {
+				// Stamp UserID here rather than trusting the adapter to: ranking
+				// keys every per-user decision off it, and RankOpts.slot answers an
+				// unstamped item with a silent skip, so a forgetful adapter would
+				// warm nothing and still report a clean sweep.
+				it.UserID = u.ID
+				cands = append(cands, scorer.Candidate{Item: it, Tier: tier})
 			}
-			add(latest, tiers.RecentlyAdded, core.TierRecentlyAdded)
 		}
 	}
 

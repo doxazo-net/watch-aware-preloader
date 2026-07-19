@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 )
 
 // ServerConfig holds the media-server connection parameters.
@@ -16,7 +17,10 @@ type ServerConfig struct {
 
 // UsersConfig specifies which users to preload for.
 type UsersConfig struct {
-	Enabled []string `toml:"enabled"` // user names; empty => all users
+	// Enabled entries are a user ID or a display name. List ORDER is the user
+	// rank: earlier = higher priority, breaking ties within a slot. Empty => all
+	// users at equal rank.
+	Enabled []string `toml:"enabled"`
 }
 
 // LibrariesConfig scopes preloading to specific media libraries.
@@ -31,13 +35,96 @@ type TierDial struct {
 	MaxItems int  `toml:"max_items"`
 }
 
+// TierOrder is an explicit priority order over signal tiers. Position in the
+// slice is priority; a tier absent from the slice is disabled for that scope.
+// An empty (non-nil) order means "warm nothing", which is legal.
+type TierOrder []core.Tier
+
+// tierNames maps the TOML/cfg spelling of a tier to its Tier value. It is the
+// single source of truth for tier spelling across config, rc.preloadd render,
+// and presave validation.
+var tierNames = map[string]core.Tier{
+	"resume":         core.TierResume,
+	"next_up":        core.TierNextUp,
+	"recently_added": core.TierRecentlyAdded,
+}
+
+// ParseTierName resolves a tier's config spelling. It also accepts the flat
+// .cfg spellings ("nextup", "recent") that rc.preloadd emits, so a
+// hand-edited config using either form loads.
+func ParseTierName(s string) (core.Tier, bool) {
+	switch s {
+	case "nextup":
+		return core.TierNextUp, true
+	case "recent":
+		return core.TierRecentlyAdded, true
+	}
+	t, ok := tierNames[s]
+	return t, ok
+}
+
+// DefaultTierOrder is the order used when no [tiers] order is configured. It
+// matches the pre-order hardcoded behavior.
+func DefaultTierOrder() TierOrder {
+	return TierOrder{core.TierResume, core.TierNextUp, core.TierRecentlyAdded}
+}
+
+// UnmarshalTOML decodes a list of tier names into a TierOrder. Decoding rejects
+// unknown names here rather than in Validate so the error names the offending
+// value while the TOML position is still known.
+func (o *TierOrder) UnmarshalTOML(v any) error {
+	raw, ok := v.([]any)
+	if !ok {
+		return fmt.Errorf("tier order must be a list of tier names, got %T", v)
+	}
+	out := make(TierOrder, 0, len(raw))
+	for _, e := range raw {
+		s, ok := e.(string)
+		if !ok {
+			return fmt.Errorf("tier order entries must be strings, got %T", e)
+		}
+		t, ok := ParseTierName(s)
+		if !ok {
+			return fmt.Errorf("unknown tier %q in order (want resume, next_up, or recently_added)", s)
+		}
+		out = append(out, t)
+	}
+	*o = out
+	return nil
+}
+
 // TiersConfig holds the per-signal dials. The zero value (no [tiers] block)
-// means every tier is enabled with no cap, preserving the pre-dials behavior;
-// applyDefaults fills that in.
+// resolves to the full default order with no cap, preserving the pre-dials
+// behavior; applyDefaults fills the order in.
 type TiersConfig struct {
+	// Dials keep their existing max_items semantics and TOML shape. Enabled is
+	// superseded by Order (a tier is enabled iff it appears in the resolved
+	// order) and is retained only as the legacy migration input.
 	Resume        TierDial `toml:"resume"`
 	NextUp        TierDial `toml:"next_up"`
 	RecentlyAdded TierDial `toml:"recently_added"`
+
+	// Order is the household-wide priority order.
+	Order TierOrder `toml:"order"`
+	// Override maps a user (ID or display name, as configured) to that user's
+	// own order. Inheritance is by ABSENCE: a user with no entry follows Order.
+	// Never populate this with copies of Order.
+	Override map[string]TierOrder `toml:"override"`
+}
+
+// Dial returns the max-items dial for a tier. Unknown tiers get the zero dial
+// (no cap), which is the correct default for the reserved Phase 3 tiers.
+func (t TiersConfig) Dial(tier core.Tier) TierDial {
+	switch tier {
+	case core.TierResume:
+		return t.Resume
+	case core.TierNextUp:
+		return t.NextUp
+	case core.TierRecentlyAdded:
+		return t.RecentlyAdded
+	default:
+		return TierDial{}
+	}
 }
 
 // PreloadConfig controls the preload budget and read-ahead sizes.
@@ -94,7 +181,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding config: %w", err)
 	}
-	c.applyDefaults(md.IsDefined("tiers"))
+	c.applyDefaults(md.IsDefined("tiers", "order"), legacyEnabledFlags(md, c.Tiers))
 	for _, key := range md.Undecoded() {
 		if key.String() == "server.api_key" {
 			return nil, fmt.Errorf("server.api_key must not be in config.toml; move it to the secrets file (%s) or the EMBY_API_KEY env var", c.SecretPath)
@@ -106,7 +193,25 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
-func (c *Config) applyDefaults(tiersDefined bool) {
+// legacyEnabledFlags reports each tier whose legacy `enabled` flag is actually
+// present in the TOML, mapped to its decoded value. Only a tier listed here has
+// an operator-stated opinion; a tier absent from the map has none. Presence is
+// read from metadata, not the decoded struct, so an explicit `enabled = false`
+// is distinguishable from an absent key.
+func legacyEnabledFlags(md toml.MetaData, t TiersConfig) map[core.Tier]bool {
+	flags := make(map[core.Tier]bool, len(tierNames))
+	for name, tier := range tierNames {
+		if md.IsDefined("tiers", name, "enabled") {
+			flags[tier] = t.Dial(tier).Enabled
+		}
+	}
+	return flags
+}
+
+// applyDefaults fills unset fields. orderDefined reports whether [tiers] order
+// is present in the TOML; legacyEnabled carries only the tiers whose legacy
+// `enabled` flag is present (see legacyEnabledFlags).
+func (c *Config) applyDefaults(orderDefined bool, legacyEnabled map[core.Tier]bool) {
 	if c.Preload.RAMPercent == 0 {
 		c.Preload.RAMPercent = 50
 	}
@@ -148,17 +253,58 @@ func (c *Config) applyDefaults(tiersDefined bool) {
 	if c.SecretPath == "" {
 		c.SecretPath = "/boot/config/plugins/watch-aware-preloader/secrets.toml"
 	}
-	// No [tiers] block at all: enable every tier with no cap, matching the
-	// pre-dials behavior. tiersDefined comes from the TOML metadata (not the
-	// decoded value) so an operator who explicitly sets enabled=false for tiers
-	// is honored rather than silently re-enabled.
-	if !tiersDefined {
-		c.Tiers = TiersConfig{
-			Resume:        TierDial{Enabled: true},
-			NextUp:        TierDial{Enabled: true},
-			RecentlyAdded: TierDial{Enabled: true},
+	// Order resolution, in precedence order:
+	//   1. an explicit [tiers] order -> honored as-is (an empty order is legal)
+	//   2. no order, but at least one legacy per-tier enabled flag -> derived
+	//      from those flags (see deriveLegacyOrder)
+	//   3. neither -> the full default order
+	// orderDefined comes from TOML metadata, not the decoded value, so an
+	// explicit `order = []` is distinguishable from an absent key.
+	//
+	// The legacy branch is gated on a legacy `enabled` flag being DEFINED, not on
+	// [tiers] existing: a block holding only new-shape keys (order, override) or
+	// only max_items dials would otherwise filter against all-false dials and
+	// resolve to an empty order, silently warming nothing.
+	if !orderDefined {
+		c.Tiers.Order = deriveLegacyOrder(legacyEnabled)
+	}
+}
+
+// deriveLegacyOrder resolves a pre-order config's `[tiers.<tier>] enabled` dials
+// into an order. legacyEnabled holds ONLY the tiers whose flag is present, so an
+// absent tier carries no operator opinion (see legacyEnabledFlags).
+//
+// The reading depends on which way the operator stated their intent:
+//   - Any explicit `enabled = true` makes the explicitly-true set an ALLOW-LIST:
+//     the order is exactly those tiers. An operator who opts one tier IN is not
+//     asking for the others, and reading it permissively would pull unrequested
+//     media into a finite page-cache budget.
+//   - Otherwise (only `enabled = false` stated) it is a DENY-LIST: the default
+//     order minus the stated tiers, since an absent flag keeps the pre-dials
+//     default (on).
+//   - No flag at all: the full default order.
+//
+// A config stating every flag (what rc.preloadd always renders) resolves the
+// same under either reading, so the plugin-rendered shape is unaffected.
+func deriveLegacyOrder(legacyEnabled map[core.Tier]bool) TierOrder {
+	if len(legacyEnabled) == 0 {
+		return DefaultTierOrder()
+	}
+	allowList := false
+	for _, enabled := range legacyEnabled {
+		if enabled {
+			allowList = true
+			break
 		}
 	}
+	order := TierOrder{}
+	for _, t := range DefaultTierOrder() {
+		enabled, stated := legacyEnabled[t]
+		if (allowList && stated && enabled) || (!allowList && !stated) {
+			order = append(order, t)
+		}
+	}
+	return order
 }
 
 // Validate checks required fields and ranges.
@@ -196,6 +342,27 @@ func (c *Config) Validate() error {
 	}
 	if c.Residency.ProbeTimeout > 0 && c.Residency.ProbeTimeout < 15*time.Second {
 		return fmt.Errorf("residency.probe_timeout must be >= 15s (above the array spin-up window) or negative to disable, got %v", c.Residency.ProbeTimeout)
+	}
+	if err := validateTierOrder(c.Tiers.Order); err != nil {
+		return fmt.Errorf("tiers.order: %w", err)
+	}
+	for user, o := range c.Tiers.Override {
+		if err := validateTierOrder(o); err != nil {
+			return fmt.Errorf("tiers.override.%s: %w", user, err)
+		}
+	}
+	return nil
+}
+
+// validateTierOrder rejects duplicates. Unknown names are already rejected at
+// decode time by TierOrder.UnmarshalTOML.
+func validateTierOrder(o TierOrder) error {
+	seen := make(map[core.Tier]bool, len(o))
+	for _, t := range o {
+		if seen[t] {
+			return fmt.Errorf("duplicate tier %q", t)
+		}
+		seen[t] = true
 	}
 	return nil
 }
