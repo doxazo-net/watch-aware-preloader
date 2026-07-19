@@ -87,9 +87,14 @@ func Rank(candidates []Candidate, nowPlaying map[string]bool, opts RankOpts) []c
 			order = append(order, c.Item.ID)
 			continue
 		}
-		// A shared item keeps the better (user rank, slot) pair, and with it that
+		// A shared item keeps the better (slot, user rank) pair, and with it that
 		// user's ID, so its fate does not depend on fetch order.
-		if cand.rank < existing.rank || (cand.rank == existing.rank && cand.slot < existing.slot) {
+		//
+		// Slot leads rank here to match the slot-major comparator below. Comparing
+		// rank first would let a high-rank user's LATE slot evict a low-rank user's
+		// EARLY slot, and the retained candidate would then sort behind the one it
+		// displaced - delaying or budget-excluding an item that a user picked first.
+		if cand.slot < existing.slot || (cand.slot == existing.slot && cand.rank < existing.rank) {
 			best[c.Item.ID] = cand
 		}
 	}

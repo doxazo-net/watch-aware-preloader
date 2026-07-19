@@ -58,15 +58,7 @@ func (d *Daemon) budget() int64 {
 }
 
 func (d *Daemon) sweep(ctx context.Context) {
-	// Fetched per sweep, not cached: rank resolution maps configured names to
-	// IDs, and the server's user list can change between sweeps.
-	users, err := d.p.Users(ctx)
-	if err != nil {
-		d.log.Error("sweep failed: listing users", "err", err)
-		return
-	}
-	opts := SweepOptionsFromConfig(d.cfg, users, d.budget(), "daemon", d.log)
-	if _, err := SweepAndRecord(ctx, d.p, d.pre, opts, d.log); err != nil {
+	if _, err := SweepWithUsers(ctx, d.p, d.pre, d.cfg, d.budget(), "daemon", d.log); err != nil {
 		d.log.Error("sweep failed", "err", err)
 	}
 }

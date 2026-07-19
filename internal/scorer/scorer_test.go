@@ -282,3 +282,39 @@ func TestRankDedupKeepsBetterSlotNotLowerEnum(t *testing.T) {
 		t.Fatalf("got %+v, want single next-up target", got)
 	}
 }
+
+func TestRankSharedItemKeepsEarlierSlotOverBetterRank(t *testing.T) {
+	// "x" is shared: user a (rank 0) reached it at their LAST slot, user b (rank 1)
+	// at their FIRST. Dedup must keep b's slot-0 view, because the final order is
+	// slot-major - keeping a's slot-2 view would sort x behind b's slot-1 "y",
+	// delaying (or budget-excluding) an item a user picked first.
+	cands := []Candidate{
+		{Item: userItem("x", "a"), Tier: core.TierRecentlyAdded}, // slot 2 for rank-0 a
+		{Item: userItem("x", "b"), Tier: core.TierResume},        // slot 0 for rank-1 b
+		{Item: userItem("y", "b"), Tier: core.TierNextUp},        // slot 1
+	}
+
+	got := targetIDs(Rank(cands, map[string]bool{}, opts(uo{"a", defaultOrder}, uo{"b", defaultOrder})))
+
+	if want := []string{"x", "y"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Rank = %v, want %v (shared item keeps the earlier slot)", got, want)
+	}
+}
+
+func TestRankSharedItemBreaksSlotTieByRank(t *testing.T) {
+	// Same slot on both sides, so the better user rank decides and carries its
+	// user's ID with it.
+	cands := []Candidate{
+		{Item: userItem("x", "b"), Tier: core.TierResume},
+		{Item: userItem("x", "a"), Tier: core.TierResume},
+	}
+
+	got := Rank(cands, map[string]bool{}, opts(uo{"a", defaultOrder}, uo{"b", defaultOrder}))
+
+	if len(got) != 1 {
+		t.Fatalf("Rank returned %d targets, want 1 (deduped)", len(got))
+	}
+	if got[0].Item.UserID != "a" {
+		t.Fatalf("UserID = %q, want a (better rank wins an equal slot)", got[0].Item.UserID)
+	}
+}

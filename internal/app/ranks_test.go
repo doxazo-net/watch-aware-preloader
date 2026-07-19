@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/doxazo-net/watch-aware-preloader/internal/config"
@@ -169,5 +170,93 @@ func TestResolveRanksUnknownOverrideIgnored(t *testing.T) {
 
 	if len(got.TierRank) != 1 {
 		t.Fatalf("TierRank = %v, want only alice", got.TierRank)
+	}
+}
+
+// dupNameUsers has two users sharing the display name "Alice", so a name-keyed
+// reference to her is ambiguous while an ID-keyed one is not.
+var dupNameUsers = []emby.User{
+	{ID: "id-a", Name: "Alice"},
+	{ID: "id-d", Name: "Alice"},
+	{ID: "id-b", Name: "Bob"},
+}
+
+func TestResolveRanksAmbiguousNameIsRejected(t *testing.T) {
+	// Two users named Alice: enrolling "Alice" must resolve to NEITHER. Picking
+	// the first would bind enrollment to the server's arbitrary list order and
+	// warm the wrong person's media.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"Alice", "Bob"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	var buf bytes.Buffer
+	got := ResolveRanks(cfg, dupNameUsers, captureLog(&buf))
+
+	if _, ok := got.UserRank["id-a"]; ok {
+		t.Error("id-a enrolled from an ambiguous name")
+	}
+	if _, ok := got.UserRank["id-d"]; ok {
+		t.Error("id-d enrolled from an ambiguous name")
+	}
+	if got.UserRank["id-b"] != 0 {
+		t.Errorf("UserRank[id-b] = %d, want 0 (the skip must not consume a rank)", got.UserRank["id-b"])
+	}
+	if !strings.Contains(buf.String(), "matches several users") {
+		t.Errorf("expected an ambiguity warning, got: %s", buf.String())
+	}
+}
+
+func TestResolveRanksExactIDResolvesDespiteDuplicateNames(t *testing.T) {
+	// The operator disambiguates with an ID; that must still work.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"id-d"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+
+	got := ResolveRanks(cfg, dupNameUsers, discardLog())
+
+	if got.UserRank["id-d"] != 0 || len(got.UserRank) != 1 {
+		t.Fatalf("UserRank = %v, want only id-d at rank 0", got.UserRank)
+	}
+}
+
+func TestResolveRanksOverrideExactIDBeatsNameAlias(t *testing.T) {
+	// "Alice" and "id-a" are two override keys for ONE user. Override is a map, so
+	// applying them in iteration order would let Go's randomized ordering decide
+	// the winner. The exact ID must win every time.
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"id-a"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	cfg.Tiers.Override = map[string]config.TierOrder{
+		"Alice": {core.TierNextUp},
+		"id-a":  {core.TierResume},
+	}
+
+	want := map[core.Tier]int{core.TierResume: 0}
+	// Repeated because the defect this guards is map-iteration nondeterminism: a
+	// single pass could pass by luck.
+	for i := 0; i < 50; i++ {
+		got := ResolveRanks(cfg, testUsers, discardLog())
+		if !reflect.DeepEqual(got.TierRank["id-a"], want) {
+			t.Fatalf("run %d: TierRank[id-a] = %v, want %v (exact ID wins)", i, got.TierRank["id-a"], want)
+		}
+	}
+}
+
+func TestResolveRanksOverrideAmbiguousNameIgnored(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Users.Enabled = []string{"id-a"}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	cfg.Tiers.Override = map[string]config.TierOrder{"Alice": {core.TierNextUp}}
+
+	var buf bytes.Buffer
+	got := ResolveRanks(cfg, dupNameUsers, captureLog(&buf))
+
+	// id-a falls back to the global order rather than taking the ambiguous override.
+	want := map[core.Tier]int{core.TierResume: 0, core.TierNextUp: 1, core.TierRecentlyAdded: 2}
+	if !reflect.DeepEqual(got.TierRank["id-a"], want) {
+		t.Fatalf("TierRank[id-a] = %v, want the global order %v", got.TierRank["id-a"], want)
+	}
+	if !strings.Contains(buf.String(), "ambiguous user name") {
+		t.Errorf("expected an ambiguity warning, got: %s", buf.String())
 	}
 }

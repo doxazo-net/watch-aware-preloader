@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 	"github.com/doxazo-net/watch-aware-preloader/internal/preloader"
 	"github.com/doxazo-net/watch-aware-preloader/internal/status"
 )
@@ -20,11 +22,40 @@ import (
 func SweepAndRecord(ctx context.Context, p Provider, pre *preloader.Preloader, opts SweepOptions, log *slog.Logger) (preloader.RunStats, error) {
 	start := time.Now()
 	stats, runErr := RunOnce(ctx, p, pre, opts, log)
-	s := buildStatus(opts.Mode, opts.Budget, time.Since(start), stats, runErr)
-	if err := status.Write(opts.StatusPath, s); err != nil {
-		log.Warn("writing status file failed", "path", opts.StatusPath, "err", err)
-	}
+	writeStatus(opts.StatusPath, opts.Mode, opts.Budget, time.Since(start), stats, runErr, log)
 	return stats, runErr
+}
+
+// writeStatus builds and writes the status file, logging (never returning) a
+// write failure. Shared by the sweep path and the pre-sweep failure path so both
+// record through exactly one code path.
+func writeStatus(path, mode string, budget int64, dur time.Duration, stats preloader.RunStats, runErr error, log *slog.Logger) {
+	s := buildStatus(mode, budget, dur, stats, runErr)
+	if err := status.Write(path, s); err != nil {
+		log.Warn("writing status file failed", "path", path, "err", err)
+	}
+}
+
+// SweepWithUsers is the recorded sweep entry point for every run mode: it
+// enumerates the provider's users, resolves ranks from that same list, and runs
+// one recorded sweep.
+//
+// The user list is fetched per sweep rather than cached, because rank resolution
+// maps configured names to IDs and the server's user list can change between
+// sweeps. Enumeration is INSIDE the recorded lifecycle on purpose: a user-list
+// outage is a failed sweep and is written to status.json as one. Returning it
+// bare would leave the status file advertising the last SUCCESSFUL run, so the
+// settings page would show a healthy warm set while nothing had been warmed.
+func SweepWithUsers(ctx context.Context, p Provider, pre *preloader.Preloader, cfg *config.Config, budget int64, mode string, log *slog.Logger) (preloader.RunStats, error) {
+	start := time.Now()
+	users, err := p.Users(ctx)
+	if err != nil {
+		err = fmt.Errorf("listing users: %w", err)
+		writeStatus(cfg.StatusPath, mode, budget, time.Since(start), preloader.RunStats{}, err, log)
+		return preloader.RunStats{}, err
+	}
+	opts := SweepOptionsFromConfig(cfg, users, budget, mode, log)
+	return SweepAndRecord(ctx, p, pre, opts, log)
 }
 
 // buildStatus maps a RunStats plus run metadata into a status.Status. by_tier

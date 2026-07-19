@@ -2,6 +2,7 @@ package app
 
 import (
 	"log/slog"
+	"sort"
 
 	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
@@ -9,15 +10,45 @@ import (
 	"github.com/doxazo-net/watch-aware-preloader/internal/scorer"
 )
 
+// userRef is how a configured user reference resolved against the server list.
+type userRef int
+
+const (
+	refUnknown   userRef = iota // matched no user
+	refExactID                  // matched a user ID
+	refName                     // matched exactly one display name
+	refAmbiguous                // matched more than one display name
+)
+
 // resolveUserKey maps a configured user reference (an ID or a display name) to a
-// user ID. IDs are GUIDs and names are human strings, so there is no collision.
-func resolveUserKey(users []emby.User, key string) (string, bool) {
+// user ID.
+//
+// An exact ID match wins outright and is checked against every user before any
+// name match is accepted: IDs are unique and server-assigned, so a key that is
+// one user's ID is never taken as another user's name.
+//
+// A display name shared by more than one user is AMBIGUOUS and resolves to
+// nothing. Returning the first match would bind the operator's intent to the
+// server's arbitrary list order, silently warming one user's media under
+// another's name; refusing makes the operator disambiguate with an ID.
+func resolveUserKey(users []emby.User, key string) (string, userRef) {
+	var named []string
 	for _, u := range users {
-		if u.ID == key || u.Name == key {
-			return u.ID, true
+		if u.ID == key {
+			return u.ID, refExactID
+		}
+		if u.Name == key {
+			named = append(named, u.ID)
 		}
 	}
-	return "", false
+	switch len(named) {
+	case 0:
+		return "", refUnknown
+	case 1:
+		return named[0], refName
+	default:
+		return "", refAmbiguous
+	}
 }
 
 // tierPositions turns an order into a tier -> position lookup.
@@ -41,14 +72,42 @@ func ResolveRanks(cfg *config.Config, users []emby.User, log *slog.Logger) score
 	global := tierPositions(cfg.Tiers.Order)
 
 	// Resolve overrides to IDs once, warning on any that bind to nobody.
-	overrides := make(map[string]map[core.Tier]int, len(cfg.Tiers.Override))
-	for key, o := range cfg.Tiers.Override {
-		id, ok := resolveUserKey(users, key)
-		if !ok {
+	//
+	// Two DIFFERENT override keys can name the SAME user (say "Alice" and her ID),
+	// and cfg.Tiers.Override is a map, so applying them in iteration order would
+	// let Go's randomized ordering pick the winner - the same config yielding a
+	// different warm set per run. Resolve in sorted key order, then apply
+	// name-resolved entries before ID-resolved ones so the exact ID always wins.
+	keys := make([]string, 0, len(cfg.Tiers.Override))
+	for key := range cfg.Tiers.Override {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	type resolvedOverride struct {
+		id    string
+		order map[core.Tier]int
+	}
+	var byName, byID []resolvedOverride
+	for _, key := range keys {
+		id, ref := resolveUserKey(users, key)
+		switch ref {
+		case refExactID:
+			byID = append(byID, resolvedOverride{id, tierPositions(cfg.Tiers.Override[key])})
+		case refName:
+			byName = append(byName, resolvedOverride{id, tierPositions(cfg.Tiers.Override[key])})
+		case refAmbiguous:
+			log.Warn("ignoring tier override for ambiguous user name", "user", key)
+		case refUnknown:
 			log.Warn("ignoring tier override for unknown user", "user", key)
-			continue
 		}
-		overrides[id] = tierPositions(o)
+	}
+	overrides := make(map[string]map[core.Tier]int, len(cfg.Tiers.Override))
+	for _, r := range byName {
+		overrides[r.id] = r.order
+	}
+	for _, r := range byID {
+		overrides[r.id] = r.order
 	}
 
 	opts := scorer.RankOpts{
@@ -87,12 +146,15 @@ func ResolveRanks(cfg *config.Config, users []emby.User, log *slog.Logger) score
 		return opts
 	}
 	for _, key := range cfg.Users.Enabled {
-		id, ok := resolveUserKey(users, key)
-		if !ok {
+		id, ref := resolveUserKey(users, key)
+		switch ref {
+		case refExactID, refName:
+			assign(id, len(opts.UserRank))
+		case refAmbiguous:
+			log.Warn("ignoring enabled user whose display name matches several users", "user", key)
+		case refUnknown:
 			log.Warn("ignoring enabled user not present on the server", "user", key)
-			continue
 		}
-		assign(id, len(opts.UserRank))
 	}
 	return opts
 }

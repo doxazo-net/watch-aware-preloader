@@ -2,14 +2,17 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/doxazo-net/watch-aware-preloader/internal/config"
 	"github.com/doxazo-net/watch-aware-preloader/internal/core"
 	"github.com/doxazo-net/watch-aware-preloader/internal/mediaserver/emby"
 	"github.com/doxazo-net/watch-aware-preloader/internal/pathmap"
@@ -94,5 +97,50 @@ func TestSweepAndRecordWriteFailureIsNonFatal(t *testing.T) {
 
 	if _, statErr := os.Stat(statusPath); statErr == nil {
 		t.Error("expected no status.json to be created when write fails")
+	}
+}
+
+// failingUsersProvider fails user enumeration; every other call is unreachable
+// because the sweep never gets that far.
+type failingUsersProvider struct{ *stubProvider }
+
+func (failingUsersProvider) Users(context.Context) ([]emby.User, error) {
+	return nil, errors.New("server unreachable")
+}
+
+func TestSweepWithUsersRecordsUserListFailure(t *testing.T) {
+	// A user-list outage is a FAILED SWEEP, not a silent early return. If it were
+	// not recorded, status.json would keep advertising the last successful run and
+	// the settings page would show a healthy warm set while nothing was warmed.
+	statusPath := filepath.Join(t.TempDir(), "status.json")
+	cfg := &config.Config{StatusPath: statusPath}
+	cfg.Tiers.Order = config.DefaultTierOrder()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	stats, err := SweepWithUsers(context.Background(), failingUsersProvider{&stubProvider{}}, nil, cfg, 1<<30, "once", logger)
+
+	if err == nil {
+		t.Fatal("SweepWithUsers returned nil error on a user-list failure")
+	}
+	if stats.Preloaded != 0 {
+		t.Errorf("Preloaded = %d, want 0", stats.Preloaded)
+	}
+
+	b, readErr := os.ReadFile(statusPath)
+	if readErr != nil {
+		t.Fatalf("status.json not written on a user-list failure: %v", readErr)
+	}
+	var s status.Status
+	if jsonErr := json.Unmarshal(b, &s); jsonErr != nil {
+		t.Fatalf("status.json is not valid JSON: %v", jsonErr)
+	}
+	if s.OK {
+		t.Error("status.OK = true, want false on a failed sweep")
+	}
+	if !strings.Contains(s.Error, "listing users") {
+		t.Errorf("status.Error = %q, want it to name the listing-users failure", s.Error)
+	}
+	if s.Mode != "once" || s.BudgetBytes != 1<<30 {
+		t.Errorf("mode/budget not recorded: %+v", s)
 	}
 }

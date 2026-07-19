@@ -109,13 +109,7 @@ func main() {
 
 	switch mode {
 	case "verify":
-		users, usersErr := client.Users(context.Background())
-		if usersErr != nil {
-			log.Error("listing users failed", "err", usersErr)
-			os.Exit(1)
-		}
-		opts := app.SweepOptionsFromConfig(cfg, users, d.Budget(), "verify", log)
-		stats, verifyErr := app.SweepAndRecord(context.Background(), client, pre, opts, log)
+		stats, verifyErr := app.SweepWithUsers(context.Background(), client, pre, cfg, d.Budget(), "verify", log)
 		if verifyErr != nil {
 			log.Error("verify sweep failed", "err", verifyErr)
 			os.Exit(1)
@@ -128,13 +122,7 @@ func main() {
 		}
 
 	case "once":
-		users, usersErr := client.Users(context.Background())
-		if usersErr != nil {
-			log.Error("listing users failed", "err", usersErr)
-			os.Exit(1)
-		}
-		opts := app.SweepOptionsFromConfig(cfg, users, d.Budget(), "once", log)
-		stats, sweepErr := app.SweepAndRecord(context.Background(), client, pre, opts, log)
+		stats, sweepErr := app.SweepWithUsers(context.Background(), client, pre, cfg, d.Budget(), "once", log)
 		if sweepErr != nil {
 			log.Error("sweep failed", "err", sweepErr)
 			os.Exit(1)
